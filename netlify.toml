@@ -1,0 +1,8 @@
+# Статический сайт без сборки: Netlify публикует корень репозитория.
+[build]
+  publish = "."
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
