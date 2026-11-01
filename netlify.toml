@@ -1,9 +1,10 @@
-# Статический сайт без сборки плюс одна серверная функция для ИИ.
+# Статический сайт без сборки плюс функции: ИИ (ai.js) и облачное хранилище (sync.mjs).
 [build]
   publish = "."
 
 [functions]
   directory = "netlify/functions"
+  node_bundler = "esbuild"
 
 [[headers]]
   for = "/sw.js"

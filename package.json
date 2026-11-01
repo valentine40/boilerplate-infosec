@@ -1,0 +1,9 @@
+{
+  "name": "hudeem-vmeste",
+  "private": true,
+  "version": "5.0.0",
+  "description": "Худеем вместе: PWA + функции Netlify (ИИ и облачное хранилище)",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}
