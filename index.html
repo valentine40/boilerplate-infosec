@@ -243,39 +243,31 @@ function recents() {
   return out;
 }
 
-/* ---------- ИИ: Google Gemini (бесплатный ключ пользователя) ---------- */
-const GKEY = 'hudeem-gkey';
-const getKey = () => { try { return localStorage.getItem(GKEY) || ''; } catch { return ''; } };
-const setKey = (v) => { try { if (v) localStorage.setItem(GKEY, v); else localStorage.removeItem(GKEY); } catch {} };
-const MODELS = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'];
+/* ---------- ИИ: бесплатный Groq через функцию на Netlify ---------- */
+const CKEY = 'hudeem-code';
+const getCode = () => { try { return localStorage.getItem(CKEY) || ''; } catch { return ''; } };
+const setCode = (v) => { try { if (v) localStorage.setItem(CKEY, v); else localStorage.removeItem(CKEY); } catch {} };
 const FORMAT = `Ответь ТОЛЬКО одним JSON без пояснений и без markdown:
 {"items":[{"name":"продукт или блюдо по-русски","grams":число,"kcal":число,"protein":число,"carbs":число,"fat":число}],"note":"короткое предупреждение, если оценка очень приблизительная, иначе пустая строка"}
 Значения kcal, protein, carbs, fat указывай для всей порции в grams (белки, жиры, углеводы в граммах). Если еды нет, верни {"error":"Не нашёл еду"}.`;
 const PROMPT_PHOTO = `Ты помогаешь считать калории по фото еды. Определи каждое блюдо на фото, оцени порции по размеру тарелки и приборов. ${FORMAT}`;
 const PROMPT_TEXT = (q) => `Оцени пищевую ценность еды, которую описал пользователь: «${q}». Раздели на отдельные продукты или блюда. Если граммы не указаны, возьми типичную порцию. ${FORMAT}`;
 const toB64 = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });
-async function askGemini(key, blob, text) {
-  const parts = [{ text }];
-  if (blob) parts.push({ inline_data: { mime_type: 'image/jpeg', data: await toB64(blob) } });
-  for (const m of MODELS) {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({ contents: [{ parts }], generationConfig: { temperature: 0.2, responseMimeType: 'application/json' } })
-    });
-    if (r.status === 404) continue;
-    const j = await r.json().catch(() => ({}));
-    const msg = (j.error && j.error.message) || '';
-    if (!r.ok) throw { code: r.status === 429 ? 'rate' : (/api key/i.test(msg) || r.status === 403) ? 'key' : 'http' };
-    const t = (((j.candidates || [])[0] || {}).content || { parts: [] }).parts.map((p) => p.text || '').join('');
-    const mm = t.match(/\{[\s\S]*\}/); if (!mm) throw { code: 'parse' };
-    return JSON.parse(mm[0]);
-  }
-  throw { code: 'http' };
+async function askAI(blob, text) {
+  const body = { text };
+  if (blob) body.image = await toB64(blob);
+  const r = await fetch('/.netlify/functions/ai', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-access-code': getCode() }, body: JSON.stringify(body) });
+  if (r.status === 401) throw { code: 'code' };
+  if (r.status === 429) throw { code: 'rate' };
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j) throw { code: (j && j.error === 'setup') ? 'setup' : (j && j.error === 'parse') ? 'parse' : 'http' };
+  return j;
 }
 function aiError(e, s) {
   const c = e && e.code;
-  if (c === 'key') { setKey(''); s.nokey = true; return 'Ключ не подошёл. Проверьте, что скопировали его целиком, и вставьте заново.'; }
+  if (c === 'code') { setCode(''); s.nokey = true; return getCode() ? '' : 'Нужен код доступа. Введите его один раз.'; }
   if (c === 'rate') return 'Бесплатный лимит запросов исчерпан. Подождите минуту или введите вручную.';
+  if (c === 'setup') return 'ИИ ещё не настроен на сервере. Пока можно вводить еду вручную.';
   if (c === 'parse') return 'Не получилось разобрать ответ. Попробуйте ещё раз.';
   if (e instanceof TypeError) return 'Нет связи с интернетом.';
   return 'Не получилось распознать. Попробуйте ещё раз или введите вручную.';
@@ -287,16 +279,15 @@ function addItems(s, items) {
   });
 }
 async function runAI(kind) {
-  const s = sheet, key = getKey();
+  const s = sheet;
   if (kind === 'text' && !s.q.trim()) { s.err = 'Напишите, что вы ели, например: гречка 150 г и 2 яйца.'; render(); return; }
-  if (!key) { s.nokey = true; s.retry = kind; s.err = ''; render(); return; }
   s.nokey = false; s.busy = true; s.err = ''; render();
   try {
-    const r = kind === 'text' ? await askGemini(key, null, PROMPT_TEXT(s.q.trim()))
-      : await askGemini(key, s.photo.blob, PROMPT_PHOTO + (s.photo.hint ? `\nПодсказка от пользователя: ${s.photo.hint}` : ''));
+    const r = kind === 'text' ? await askAI(null, PROMPT_TEXT(s.q.trim()))
+      : await askAI(s.photo.blob, PROMPT_PHOTO + (s.photo.hint ? `\nПодсказка от пользователя: ${s.photo.hint}` : ''));
     if (sheet !== s) return;
     if (r.error) s.err = r.error; else { addItems(s, r.items); s.note = r.note || ''; if (kind === 'text') s.q = ''; }
-  } catch (e) { s.err = aiError(e, s); }
+  } catch (e) { s.err = aiError(e, s); if (e && e.code === 'code') s.retry = kind; }
   if (sheet === s) { s.busy = false; render(); }
 }
 
@@ -507,10 +498,10 @@ function viewMore() {
   <div class="head"><div><div class="date">Настройки</div><h1>Ещё</h1></div></div>
   <section class="card menu">
     <button class="mrow" data-a="profile"><b>Профиль и цели</b><span>${fmt(S.profile.goal)} ккал в день</span></button>
-    <button class="mrow" data-a="keyset"><b>Ключ для ИИ (Gemini)</b><span>${getKey() ? 'сохранён' : 'не задан'}</span></button>
+    <button class="mrow" data-a="keyset"><b>Код доступа к ИИ</b><span>${getCode() ? 'введён' : 'не введён'}</span></button>
     <button class="mrow" data-a="backup"><b>Резервная копия данных</b><span>копировать</span></button>
   </section>
-  <section class="card"><p class="small mute">Все записи хранятся только на этом телефоне. Расчёт калорий по тексту и фото делает Google Gemini по вашему бесплатному ключу, штрихкоды ищутся в Open Food Facts. Калории это оценка, а не медицинская рекомендация.</p></section>`;
+  <section class="card"><p class="small mute">Все записи хранятся только на этом телефоне. Расчёт калорий по тексту и фото делает бесплатный ИИ (Groq) через ваш сайт, штрихкоды ищутся в Open Food Facts. Калории это оценка, а не медицинская рекомендация.</p></section>`;
 }
 function viewTimer() {
   const t = timerRun, ph = t.ph[t.idx], rest = ph.t === 'rest', nxt = t.ph[t.idx + 1], total = t.ph.reduce((a, b) => a + b.s, 0), doneS = t.ph.slice(0, t.idx).reduce((a, b) => a + b.s, 0) + (ph.s - t.left);
@@ -550,8 +541,8 @@ function localHtml(s) {
   return h;
 }
 function keyBlock(s) {
-  return `<div class="ok">Для ИИ нужен бесплатный ключ Google Gemini. Один раз, около минуты, без карты:<ol><li>Откройте <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> и войдите в Google.</li><li>Нажмите «Create API key» и скопируйте ключ.</li><li>Вставьте его сюда.</li></ol></div>
-  <label>Ключ<input data-f="keyv" type="text" placeholder="AIza…" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(s.keyv || '')}"></label><button class="btn" data-a="savekey">Сохранить</button>`;
+  return `<div class="ok">Введите код доступа к ИИ. Его задаёт владелец приложения в Netlify, вводить нужно один раз на каждом телефоне.</div>
+  <label>Код доступа<input data-f="keyv" type="text" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(s.keyv || '')}"></label><button class="btn" data-a="savekey">Сохранить</button>`;
 }
 function viewAdd(s) {
   const mname = (MEALS.find((m) => m[0] === s.meal) || [])[1];
@@ -559,7 +550,7 @@ function viewAdd(s) {
   let body = '';
   if (s.tab === 'search') {
     body = `<div class="row"><input data-f="q" type="text" placeholder="Например: гречка 150 г, 2 яйца" value="${esc(s.q)}" enterkeyhint="search" autocomplete="off"><button class="btn" style="width:auto;min-width:118px" data-a="ai" ${s.busy ? 'disabled' : ''}>Рассчитать</button></div>
-    <p class="tiny mute">Оценку делает ИИ по вашему бесплатному ключу. Ниже сразу ищется среди ваших продуктов.</p><div id="local">${localHtml(s)}</div>`;
+    <p class="tiny mute">Калории оценивает бесплатный ИИ, поэтому цифры приблизительные. Ниже сразу ищется среди ваших продуктов.</p><div id="local">${localHtml(s)}</div>`;
   } else if (s.tab === 'barcode') {
     body = `${s.scanning ? '<div id="reader"></div><button class="btn ghost" data-a="stopscan">Остановить камеру</button>' : `<button class="btn soft" data-a="scan">${ic('cam')} Сканировать камерой</button>`}
     <div class="row"><input data-f="code" type="text" inputmode="numeric" placeholder="или введите цифры штрихкода" value="${esc(s.code)}"><button class="btn" style="width:auto;min-width:96px" data-a="lookup" ${s.busy ? 'disabled' : ''}>Найти</button></div>
@@ -595,7 +586,7 @@ function viewSheet() {
   else if (s.type === 'steps') body = `<h2>Шаги за день</h2><p class="mute small">Откройте приложение «Здоровье» на iPhone и посмотрите шаги за сегодня.</p>${inp('steps', 'Шагов', 'number')}<button class="btn" data-a="savesteps">Сохранить</button><button class="btn soft" data-a="close">Отмена</button>`;
   else if (s.type === 'wmanual') body = `<h2>Своя тренировка</h2>${inp('name', 'Что делали')}<div class="grid2">${inp('min', 'Минут', 'number')}${inp('kcal', 'Ккал (примерно)', 'number')}</div><button class="btn" data-a="savew" ${n0(s.min) > 0 ? '' : 'disabled'}>Сохранить</button><button class="btn soft" data-a="close">Отмена</button>`;
   else if (s.type === 'done') body = `<h2>${s.full ? 'Готово!' : 'Тренировка записана'}</h2><p>${esc(s.name)}: ${s.min} мин, примерно ${s.kcal} ккал. Запись добавлена в дневник.</p><button class="btn" data-a="close">Отлично</button>`;
-  else if (s.type === 'keyset') body = `<h2>Ключ Google Gemini</h2><label>Ключ<input data-f="keyv" type="text" placeholder="AIza…" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(s.keyv || '')}"></label><p class="small mute">Бесплатный ключ: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Фото и описания еды уходят в Google. На бесплатном тарифе Google может использовать запросы для улучшения своих продуктов.</p><button class="btn" data-a="savekey2">Сохранить</button><button class="btn soft" data-a="close">Отмена</button>`;
+  else if (s.type === 'keyset') body = `<h2>Код доступа к ИИ</h2><label>Код<input data-f="keyv" type="text" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(s.keyv || '')}"></label><p class="small mute">Код задаётся в Netlify в переменной ACCESS_CODES. Он нужен, чтобы чужие не тратили бесплатный лимит ИИ. Фото и описания еды обрабатывает Groq.</p><button class="btn" data-a="savekey2">Сохранить</button><button class="btn soft" data-a="close">Отмена</button>`;
   else if (s.type === 'backup') body = `<h2>Резервная копия</h2><p class="small mute">Скопируйте текст и сохраните в заметках. Чтобы восстановить данные или перенести на другой телефон, вставьте текст сюда и нажмите «Восстановить».</p>
     <textarea id="bk" data-f="blob" rows="8" spellcheck="false">${esc(s.blob)}</textarea><div class="grid2"><button class="btn ghost" data-a="copybk">Скопировать</button><button class="btn" data-a="dorestore">Восстановить</button></div><button class="btn soft" data-a="close">Закрыть</button>`;
   else if (s.type === 'profile') {
@@ -689,9 +680,9 @@ document.addEventListener('click', (e) => {
     case 'edit': { const en = S.meals.find((m) => m.id === id); if (!en) break;
       sheet = Object.assign(newAdd(en.meal), { edit: en.id, items: [{ id: rnd(), name: en.name, g: en.g, k: en.k, p: en.p, c: en.c, f: en.f }], confirmDel: false }); render(); break; }
     case 'delentry': if (!s.confirmDel) { s.confirmDel = true; render(); } else { S.meals = S.meals.filter((m) => m.id !== s.edit); save(); sheet = null; say('Удалено'); } break;
-    case 'savekey': { const v = (s.keyv || '').trim(); if (v.length < 20) { s.err = 'Ключ слишком короткий. Скопируйте его целиком.'; render(); break; } setKey(v); s.nokey = false; s.err = ''; const r = s.retry || 'text'; s.retry = null; runAI(r); break; }
-    case 'keyset': sheet = { type: 'keyset', keyv: getKey() }; render(); break;
-    case 'savekey2': setKey((s.keyv || '').trim()); sheet = null; say('Ключ сохранён'); break;
+    case 'savekey': { const v = (s.keyv || '').trim(); if (!v) { s.err = 'Введите код.'; render(); break; } setCode(v); s.nokey = false; s.err = ''; const r = s.retry || 'text'; s.retry = null; runAI(r); break; }
+    case 'keyset': sheet = { type: 'keyset', keyv: getCode() }; render(); break;
+    case 'savekey2': setCode((s.keyv || '').trim()); sheet = null; say('Код сохранён'); break;
     case 'water': { const d = dayInfo(day), v = Math.max(0, (d.water || 0) + n0(el.dataset.d)); S.days[day] = Object.assign({}, d, { water: v }); save(); render(); break; }
     case 'steps': sheet = { type: 'steps', steps: dayInfo(day).steps || '' }; render(); break;
     case 'savesteps': S.days[day] = Object.assign({}, dayInfo(day), { steps: Math.round(n0(s.steps)) }); save(); sheet = null; render(); break;

@@ -1,6 +1,9 @@
-# Статический сайт без сборки: Netlify публикует корень репозитория.
+# Статический сайт без сборки плюс одна серверная функция для ИИ.
 [build]
   publish = "."
+
+[functions]
+  directory = "netlify/functions"
 
 [[headers]]
   for = "/sw.js"
