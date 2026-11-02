@@ -212,6 +212,20 @@ textarea{resize:vertical;font-size:13px}
 .ai .tipbox{margin-top:12px;padding:11px 12px;border-radius:14px;background:var(--card);border:1px solid var(--line);font-size:14px}
 .sync{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mute)} .sync i{width:8px;height:8px;border-radius:50%;background:var(--mute)} .sync.ok i{background:var(--brand)} .sync.err i{background:var(--warm)}
 .safety{border-left:4px solid var(--c)}
+/* страница программы и картинки упражнений */
+.page{position:fixed;inset:0;z-index:35;background:var(--bg);display:flex;flex-direction:column}
+.pagehead{display:flex;align-items:center;gap:12px;padding:max(12px,env(safe-area-inset-top,0px)) 16px 10px;background:var(--bg)}
+.pagehead h2{font:700 21px var(--f-body)} .pgb{width:42px;height:42px;border-radius:13px;background:var(--card);border:1px solid var(--line);display:grid;place-items:center;flex:none}
+.pbody{flex:1;overflow:auto;padding:4px max(16px,env(safe-area-inset-right,0px)) 24px;display:flex;flex-direction:column;gap:12px;max-width:520px;width:100%;margin:0 auto;overscroll-behavior:contain}
+.pfoot{padding:10px 16px calc(12px + env(safe-area-inset-bottom,0px));background:var(--bg);border-top:1px solid var(--line)} .pfoot .btn{max-width:488px;margin:0 auto}
+.prow{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:14px 16px} .prow .icon:last-child{color:var(--mute)}
+.exm{position:relative;width:88px;height:88px;border-radius:16px;overflow:hidden;background:#fff;flex:none;border:1px solid var(--line)}
+.exm img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.exm img.b{opacity:0;animation:xf 1.6s ease-in-out infinite alternate}
+@keyframes xf{from{opacity:0}to{opacity:1}}
+.exm .phi{display:none;position:absolute;inset:0;place-items:center;color:var(--brand)} .exm.ph{background:var(--brand-soft)} .exm.ph .phi{display:grid} .exm.ph img{display:none}
+.exm.big{width:min(86vw,300px);height:min(30vh,230px)}
+.timer.hasm .big{font-size:76px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -292,7 +306,7 @@ function normalize(o) {
 }
 let S = (() => { try { return normalize(JSON.parse(localStorage.getItem(LS))); } catch { return normalize(null); } })();
 let tab = 'diary', day = ymd(), sheet = null, toast = '', timerRun = null, pool = [];
-let ptab = 'over', rday = ymd(), rweek = '', repBusy = '', repErr = '';
+let ptab = 'over', rday = ymd(), rweek = '', repBusy = '', repErr = '', openProg = null, walkMin = 0;
 
 const persist = () => { try { localStorage.setItem(LS, JSON.stringify(S)); } catch {} };
 function save() { S.updated = Date.now(); persist(); schedulePush(); }
@@ -501,6 +515,7 @@ const PROGRAMS = [
       ['Растяжка бедра стоя', 'Держитесь за опору'], ['Бабочка сидя', 'Стопы вместе, колени к полу'], ['Поза ребёнка', 'Тянитесь руками вперёд'], ['Скручивание лёжа', 'Колени в сторону, плечи на полу']] }
 ];
 const prog = (id) => PROGRAMS.find((p) => p.id === id);
+
 const workRest = () => (level() === 1 ? [30, 30] : level() === 2 ? [40, 25] : [40, 20]);
 function phases(p, mins) {
   if (p.walk) { const m = mins || 20; return [{ t: 'work', name: p.name, tip: p.ex[0][1], s: m * 60 }]; }
@@ -510,8 +525,8 @@ function phases(p, mins) {
     out.push({ t: 'rest', name: 'Заминка', tip: 'Идите медленно, расслабьте плечи', s: 180 }); return out;
   }
   const [w, r] = p.stretch ? [40, 5] : workRest(), out = [];
-  if (p.warm) out.push({ t: 'rest', name: 'Разминка', tip: p.warm, s: 45 });
-  p.ex.forEach((e, i) => { out.push({ t: 'work', name: e[0], tip: e[1], s: w, i: i + 1, of: p.ex.length }); if (i < p.ex.length - 1) out.push({ t: 'rest', name: 'Отдых', tip: 'Следующее: ' + p.ex[i + 1][0], s: r }); });
+  if (p.warm) out.push({ t: 'rest', name: 'Разминка', tip: p.warm, s: 45, nx: p.ex[0][0] });
+  p.ex.forEach((e, i) => { out.push({ t: 'work', name: e[0], tip: e[1], s: w, i: i + 1, of: p.ex.length }); if (i < p.ex.length - 1) out.push({ t: 'rest', name: 'Отдых', tip: 'Следующее: ' + p.ex[i + 1][0], s: r, nx: p.ex[i + 1][0] }); });
   return out;
 }
 const minOf = (p, m) => Math.max(1, Math.round(phases(p, m).reduce((a, b) => a + b.s, 0) / 60));
@@ -612,6 +627,84 @@ function viewDiary() {
   <button class="btn soft" data-a="fridge">${ic('apple')} План питания из холодильника</button>
   <button class="btn soft" data-a="dayreport">${ic('chart')} Отчёт за этот день</button>`;
 }
+/* ---------- картинки упражнений: открытая база free-exercise-db (Unlicense) ---------- */
+const EXBASE = 'https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/';
+const EXJSON = ['https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json', 'https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main/dist/exercises.json'];
+const EXQ = {
+  'Приседания': ['bodyweight squat', 'air squat', 'squat'], 'Приседания к стулу': ['chair squat', 'box squat', 'bodyweight squat'], 'Вставание со стула': ['chair squat', 'box squat', 'bodyweight squat'],
+  'Отжимания от стены или от колен': ['incline push-up', 'pushups', 'push up'], 'Отжимания от стены': ['incline push-up', 'pushups', 'push up'],
+  'Выпады на месте': ['bodyweight lunge', 'lunge', 'split squat'], 'Боковые выпады': ['side lunge', 'lateral lunge', 'side lunges'],
+  'Ягодичный мостик': ['glute bridge', 'butt lift bridge', 'bridge'], 'Планка на локтях': ['plank', 'front plank'], 'Планка у стены': ['plank', 'incline push-up'],
+  'Скалолаз медленно': ['mountain climbers', 'mountain climber'], 'Марш с высоким коленом': ['high knees', 'high knee'], 'Подъём ног лёжа': ['leg raise', 'lying leg raise', 'flat bench lying leg raise'],
+  'Скручивания': ['crunches', 'crunch'], 'Подъём на носки': ['standing calf raises', 'calf raise', 'calf raises'], 'Подъём на носки у опоры': ['standing calf raises', 'calf raise', 'calf raises'],
+  'Отведение ноги в сторону': ['hip abduction', 'side leg raise', 'standing hip abduction', 'leg lift'], 'Птица-собака': ['bird dog', 'superman', 'bird-dog'], 'Кошка и корова': ['cat stretch', 'cat cow', 'cat'],
+  'Тяга бутылок с водой': ['one-arm dumbbell row', 'bent over one-arm row', 'dumbbell row', 'one arm row'], 'Жим бутылок вверх сидя': ['seated dumbbell press', 'dumbbell shoulder press', 'shoulder press'],
+  'Махи руками': ['arm circles', 'arm circle'], 'Круги плечами': ['shoulder circles', 'shoulder roll', 'arm circles'], 'Наклоны головы': ['neck stretch', 'side neck stretch'],
+  'Грудь у стены': ['chest stretch', 'doorway chest stretch'], 'Наклон к ногам': ['standing toe touch', 'hamstring stretch', 'toe touch', 'standing hamstring stretch'],
+  'Растяжка бедра стоя': ['standing quad stretch', 'quad stretch', 'quadriceps stretch'], 'Бабочка сидя': ['butterfly', 'butterfly stretch'], 'Поза ребёнка': ['childs pose', 'child pose'],
+  'Скручивание лёжа': ['spinal twist', 'lying twist', 'supine spinal twist', 'lying spinal twist'], 'Наклоны в стороны': ['side bend', 'dumbbell side bend', 'oblique'],
+  'Повороты корпуса': ['russian twist', 'seated twist', 'torso rotation'], 'Разгибание колена': ['leg extensions', 'leg extension', 'seated leg extension'],
+  '«Бокс» сидя': ['shadow boxing', 'boxing', 'punch'], 'Ходьба на месте': ['walking in place', 'jog in place', 'jogging in place']
+};
+const EXKEY = 'hudeem-exdb-v2';
+let EXI = (() => { try { return JSON.parse(localStorage.getItem(EXKEY)); } catch { return null; } })(), exLoading = false;
+function pickEx(db, queries) {
+  const norm = (t) => String(t).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+  for (const q of queries) {
+    const qt = norm(q); let best = null, bs = -1e9;
+    for (const e of db) {
+      if (!e.images || !e.images.length) continue;
+      const nt = norm(e.name); if (!qt.every((t) => nt.includes(t))) continue;
+      const sc = 100 - nt.length * 4 + (e.equipment === 'body only' ? 15 : 0) + (nt.join(' ') === qt.join(' ') ? 50 : 0);
+      if (sc > bs) { bs = sc; best = e; }
+    }
+    if (best) return { n: best.name, i: best.images.slice(0, 2) };
+  }
+  return null;
+}
+async function loadExDb() {
+  if (EXI || exLoading) return; exLoading = true;
+  for (const u of EXJSON) {
+    try {
+      const r = await fetch(u); if (!r.ok) continue; const db = await r.json(); if (!Array.isArray(db)) continue;
+      const idx = {}; Object.keys(EXQ).forEach((ru) => { const m = pickEx(db, EXQ[ru]); if (m) idx[ru] = m; });
+      EXI = idx; try { localStorage.setItem(EXKEY, JSON.stringify(idx)); } catch {}
+      exLoading = false; if (!sheet && (openProg || timerRun)) render(); return;
+    } catch {}
+  }
+  exLoading = false;
+}
+function mediaHtml(name, big) {
+  const m = EXI && EXI[name], cls = 'exm' + (big ? ' big' : '') + (m ? '' : ' ph');
+  return `<div class="${cls}"><span class="phi">${ic('train')}</span>${m ? `<img src="${EXBASE}${encodeURI(m.i[0])}" alt="${esc(name)}" onerror="this.parentNode.classList.add('ph')">${m.i[1] ? `<img class="b" src="${EXBASE}${encodeURI(m.i[1])}" alt="" onerror="this.remove()">` : ''}` : ''}</div>`;
+}
+const ytUrl = (name) => 'https://www.youtube.com/results?search_query=' + encodeURIComponent(name + ' упражнение как делать правильно');
+const DESC = {
+  chair: 'Самый мягкий старт. Всё делается сидя на устойчивом стуле без колёс, подходит при болях в коленях и одышке.',
+  soft: 'Короткая разминка всего тела без прыжков. Помогает втянуться и разогреть суставы.',
+  walk: 'Ходьба в темпе, когда можно говорить, но петь не получится. Выберите время и включите таймер.',
+  strength: 'Силовые упражнения с собственным весом и бутылками воды. Укрепляют мышцы и берегут колени.',
+  walkint: 'Чередуем быстрый и спокойный шаг. Сжигает больше калорий, чем ровная ходьба, и тренирует сердце.',
+  home: 'Круговая тренировка на всё тело, самая насыщенная. Берите её, когда «Сила без прыжков» проходит легко.',
+  stretch: 'Спокойная растяжка после тренировки или вечером. Снимает напряжение и улучшает подвижность.'
+};
+const planWalk = () => { const x = weekPlan().days.find((d) => d.p && d.p.id === 'walk'); return x ? x.m : 20; };
+function viewProg() {
+  const p = prog(openProg); if (!p) return '';
+  const m = p.walk ? (walkMin || planWalk()) : 0, min = minOf(p, m), [w] = p.stretch ? [40] : workRest();
+  let body = '';
+  if (p.walk) body = `<div class="lbl">Сколько идти</div><div class="mchips">${[10, 15, 20, 30, 45, 60].map((x) => `<button data-a="wmin" data-id="${x}" aria-current="${x === m}">${x} мин</button>`).join('')}</div>
+    <section class="card"><p class="small">Идите ровным бодрым шагом. Если запыхались, замедлитесь. Руки согните в локтях и двигайте ими в такт.</p><a class="small" style="font-weight:600" href="${ytUrl('быстрая ходьба техника')}" target="_blank" rel="noopener">Смотреть видео про технику ходьбы</a></section>`;
+  else if (p.build) body = `<section class="card"><div class="list"><div class="item"><span class="t">5 мин</span><span class="n">Разминка: идите спокойно</span></div><div class="item"><span class="t">5 раз</span><span class="n">2 минуты быстрым шагом, затем 2 минуты спокойным</span></div><div class="item"><span class="t">3 мин</span><span class="n">Заминка: медленный шаг, расслабьте плечи</span></div></div></section>`;
+  else body = `<div class="lbl">Упражнения (${p.ex.length})</div>${p.warm ? `<section class="card"><b>Разминка, 45 сек</b><p class="small mute">${esc(p.warm)}</p></section>` : ''}
+    ${p.ex.map((e, i) => `<section class="card"><div class="row" style="align-items:flex-start">${mediaHtml(e[0])}<div class="grow"><div class="small mute">${i + 1} из ${p.ex.length} · ${p.stretch ? 40 : w} сек</div><b style="font-size:16px">${esc(e[0])}</b><p class="small" style="margin:4px 0 6px">${esc(e[1])}</p><a class="small" style="font-weight:600" href="${ytUrl(e[0])}" target="_blank" rel="noopener">Смотреть видео</a></div></div></section>`).join('')}
+    ${EXI === null ? '<p class="tiny mute">Картинки загружаются из открытой базы упражнений. Нужен интернет.</p>' : ''}`;
+  return `<div class="page"><div class="pagehead"><button class="pgb" data-a="progback" aria-label="Назад">${ic('left')}</button><h2>${p.name}</h2></div>
+  <div class="pbody"><div class="chips" style="margin:0"><span class="chip">${min} мин</span><span class="chip w">≈ ${kcalOf(p, min)} ккал</span>${p.hard ? '<span class="chip mute">Нагрузка на суставы выше</span>' : ''}${p.lv > level() ? '<span class="chip mute">Для следующего уровня</span>' : ''}</div>
+  <p class="small">${DESC[p.id] || ''}</p>${body}</div>
+  <div class="pfoot"><button class="btn" data-a="start" data-id="${p.id}" data-m="${m}">Начать · ${min} мин</button></div></div>`;
+}
+
 function viewTrain() {
   const pl = weekPlan(), L = LEVELS[pl.level], b = bmiNow(), today = ymd(), end = addDays(pl.mon, 6);
   const done = minutesIn(pl.mon, end), tdy = pl.days.find((x) => x.d === today);
@@ -634,12 +727,11 @@ function viewTrain() {
     <li>Боль в груди, головокружение или сильная одышка значат «стоп». Острая боль в суставе тоже.</li>
     <li>Не задерживайте дыхание, пейте воду. Прыжков в программах нет, чтобы беречь колени.</li></ul>
     <p class="tiny mute" style="margin-top:10px">Ориентир по рекомендациям ACSM: постепенно дойти до 150 минут умеренной активности в неделю, затем до 200-300 для устойчивого результата, плюс силовые два раза в неделю.</p></section>
-  <div class="sec"><h2>Программы</h2></div>
+  <div class="sec"><h2>Программы</h2><span class="small mute">нажмите, чтобы открыть</span></div>
   ${sorted.map((p) => { const m = p.walk ? wm : 0, min = minOf(p, m), isT = tdy && tdy.p && tdy.p.id === p.id, later = p.lv > pl.level;
-    return `<section class="card prog"><div class="row" style="align-items:flex-start"><div class="pico ${p.hard ? 'hard' : ''}">${ic(p.icon)}</div><div class="grow"><h3>${p.name}</h3>
-    <div class="chips" style="margin:6px 0 8px"><span class="chip">${min} мин</span><span class="chip w">≈ ${kcalOf(p, min)} ккал</span>${isT ? '<span class="chip rec">Сегодня по плану</span>' : ''}${later ? '<span class="chip mute">Для следующего уровня</span>' : ''}${p.hard ? '<span class="chip mute">Нагрузка на суставы выше</span>' : ''}</div></div></div>
-    <p class="small mute" style="margin-bottom:12px">${p.walk ? 'Обычная ходьба в хорошем темпе, таймер отсчитает время.' : p.build ? 'Разминка, пять раз по 2 минуты быстрым шагом и заминка.' : p.ex.map((e) => e[0]).slice(0, 4).join(', ') + ' и другие'}</p>
-    <button class="btn ${isT ? '' : 'ghost'}" data-a="start" data-id="${p.id}" data-m="${m}">Начать</button></section>`; }).join('')}
+    return `<button class="card prow" data-a="openprog" data-id="${p.id}"><div class="pico ${p.hard ? 'hard' : ''}">${ic(p.icon)}</div><div class="grow"><b style="font-size:16px">${p.name}</b>
+    <div class="small mute">${min} мин · ≈ ${kcalOf(p, min)} ккал${!p.walk && !p.build ? ' · ' + p.ex.length + ' упр.' : ''}</div>
+    ${isT || later || p.hard ? `<div class="chips" style="margin:6px 0 0">${isT ? '<span class="chip rec">Сегодня по плану</span>' : ''}${later ? '<span class="chip mute">Позже</span>' : ''}${p.hard ? '<span class="chip mute">Нагрузка на суставы</span>' : ''}</div>` : ''}</div>${ic('right')}</button>`; }).join('')}
   ${journalHtml()}
   <div class="sec"><h2>За 7 дней</h2><button class="small" style="color:var(--brand);font-weight:600" data-a="wmanual">+ Записать своё</button></div>
   <section class="card"><div class="list">${week.length ? week.map((w) => `<div class="item"><span class="t">${w.date.slice(8)}.${w.date.slice(5, 7)}</span><span class="n">${esc(w.name)}<br><span class="small mute">${w.min} мин</span></span><span class="k">${w.kcal} ккал</span><button class="x" data-a="delw" data-id="${w.id}" aria-label="Удалить">${ic('trash')}</button></div>`).join('') : '<div class="empty">Тренировок пока нет. Начните с плана на сегодня.</div>'}</div></section>`;
@@ -902,7 +994,8 @@ function viewMore() {
 function viewTimer() {
   const t = timerRun, ph = t.ph[t.idx], rest = ph.t === 'rest', nxt = t.ph[t.idx + 1], total = t.ph.reduce((a, b) => a + b.s, 0), doneS = t.ph.slice(0, t.idx).reduce((a, b) => a + b.s, 0) + (ph.s - t.left);
   const s = Math.ceil(t.left);
-  return `<div class="timer ${rest ? 'rest' : ''}"><div class="phase">${rest ? 'Отдых' : ph.of ? `Упражнение ${ph.i} из ${ph.of}` : 'Работаем'}</div>
+  const mn = rest ? ph.nx : ph.name, media = mn && EXI && EXI[mn] ? mediaHtml(mn, true) : '';
+  return `<div class="timer ${rest ? 'rest' : ''} ${media ? 'hasm' : ''}">${media}<div class="phase">${rest ? 'Отдых' : ph.of ? `Упражнение ${ph.i} из ${ph.of}` : 'Работаем'}</div>
   <div class="big">${ph.s > 99 ? Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') : s}</div>
   <div class="name">${esc(ph.name)}</div><p class="tip">${esc(ph.tip)}</p>
   <div class="pbar"><i style="width:${Math.min(100, (doneS / total) * 100)}%"></i></div>
@@ -1018,7 +1111,7 @@ function render() {
   const scroll = window.scrollY;
   $('#app').innerHTML = `<div class="wrap">${views[tab]()}</div>
   <div class="tabs"><nav>${T('diary', 'Дневник', 'book')}${T('train', 'Тренировки', 'train')}<button class="fab" data-a="add" data-id="${mealByHour()}" aria-label="Добавить еду">${ic('plus')}</button>${T('progress', 'Прогресс', 'chart')}${T('more', 'Ещё', 'more')}</nav></div>
-  ${timerRun ? viewTimer() : ''}${viewSheet()}${toast ? `<div class="toast">${esc(toast)}</div>` : ''}`;
+  ${openProg ? viewProg() : ''}${timerRun ? viewTimer() : ''}${viewSheet()}${toast ? `<div class="toast">${esc(toast)}</div>` : ''}`;
   if (key) { const el = document.querySelector(`[data-${kind}="${key}"]`); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch {} } }
   if (!sheet) window.scrollTo(0, scroll);
   paintSync();
@@ -1088,7 +1181,7 @@ document.addEventListener('click', (e) => {
     case 'savesteps': S.days[day] = Object.assign({}, dayInfo(day), { steps: Math.round(n0(s.steps)) }); save(); sheet = null; render(); break;
     case 'weight': sheet = { type: 'weight', kg: lastWeight() || '' }; render(); break;
     case 'saveweight': { const kg = Math.round(n0(s.kg) * 10) / 10; if (kg <= 20) break; const t = ymd(); S.weights = S.weights.filter((w) => w.date !== t); S.weights.push({ date: t, kg }); S.weights.sort((x, y) => x.date.localeCompare(y.date)); save(); sheet = null; say('Вес записан'); break; }
-    case 'start': startTimer(id, n0(el.dataset.m)); break;
+    case 'start': openProg = null; startTimer(id, n0(el.dataset.m)); break;
     case 'tpause': timerRun.paused = !timerRun.paused; timerRun.last = Date.now(); render(); break;
     case 'tskip': { const t = timerRun; if (t.idx >= t.ph.length - 1) finishTimer(true); else { t.idx++; t.left = t.ph[t.idx].s; render(); } break; }
     case 'tstop': finishTimer(false); break;
@@ -1112,6 +1205,9 @@ document.addEventListener('click', (e) => {
       repErr = ''; render(); break; }
     case 'airep': runReport(el.dataset.k); break;
     case 'dayreport': rday = day; ptab = 'day'; tab = 'progress'; repErr = ''; window.scrollTo(0, 0); render(); break;
+    case 'openprog': openProg = id; walkMin = 0; loadExDb(); render(); break;
+    case 'progback': openProg = null; render(); break;
+    case 'wmin': walkMin = n0(id); render(); break;
     case 'syncnow': syncNow(); break;
     case 'addex': sheet = newEx(); render(); break;
     case 'exrep': { const e = S.exlog.find((x) => x.id === id); if (e) { sheet = newEx({ exn: e.name, sets: e.sets, reps: e.reps, kg: e.kg || '', min: e.min || '', feel: 'ok' }); render(); } break; }
@@ -1133,7 +1229,7 @@ document.addEventListener('click', (e) => {
 /* ---------- старт ---------- */
 if (!S.onboarded) sheet = { type: 'profile', p: Object.assign({}, S.profile), kg0: '', first: true };
 render();
-lastPull = Date.now(); syncNow();
+lastPull = Date.now(); syncNow(); setTimeout(loadExDb, 1500);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
 </script>
