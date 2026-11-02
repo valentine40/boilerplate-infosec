@@ -8,7 +8,7 @@ function extract(text) {
   try { return JSON.parse(m[0]); } catch { return null; }
 }
 
-async function viaGroq(text, image) {
+async function viaGroq(text, image, max) {
   const content = [{ type: 'text', text }];
   if (image) content.push({ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + image } });
   const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -19,7 +19,7 @@ async function viaGroq(text, image) {
       messages: [{ role: 'user', content }],
       response_format: { type: 'json_object' },
       temperature: 0.2,
-      max_tokens: 1200
+      max_tokens: max
     })
   });
   const j = await r.json().catch(() => ({}));
@@ -56,13 +56,14 @@ exports.handler = async (event) => {
 
   let body;
   try { body = JSON.parse(event.body || '{}'); } catch { return json(400, { error: 'bad_request' }); }
-  const text = String(body.text || '').slice(0, 4000);
+  const text = String(body.text || '').slice(0, 9000);
+  const max = Math.min(3000, Math.max(300, Number(body.max) || 1200));
   const image = body.image ? String(body.image) : '';
   if (!text) return json(400, { error: 'bad_request' });
   if (image.length > 4 * 1024 * 1024) return json(413, { error: 'too_big' });
 
   let res;
-  try { res = process.env.GROQ_API_KEY ? await viaGroq(text, image) : await viaGemini(text, image); }
+  try { res = process.env.GROQ_API_KEY ? await viaGroq(text, image, max) : await viaGemini(text, image); }
   catch { return json(502, { error: 'upstream' }); }
 
   if (res.status === 429) return json(429, { error: 'rate' });

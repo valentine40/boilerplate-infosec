@@ -275,14 +275,14 @@ const MEALS = [['breakfast', 'Завтрак', 'sun'], ['lunch', 'Обед', 'bo
 const mealByHour = () => { const h = new Date().getHours(); return h < 11 ? 'breakfast' : h < 16 ? 'lunch' : h < 21 ? 'dinner' : 'snack'; };
 const blank = () => ({
   profile: { name: PROFILES[who].name, sex: 'f', age: 40, height: 165, activity: 1.375, goal: 1800, weightGoal: 0, start: '' },
-  meals: [], foods: [], workouts: [], weights: [], days: {}, reports: {}, updated: 0, onboarded: false
+  meals: [], foods: [], workouts: [], weights: [], days: {}, reports: {}, exlog: [], fridge: '', plan: null, updated: 0, onboarded: false
 });
 function normalize(o) {
   const b = blank(), s = Object.assign(b, o || {});
   s.profile = Object.assign(b.profile, (o && o.profile) || {});
   s.foods = Array.isArray(s.foods) ? s.foods : [];
   s.reports = s.reports && typeof s.reports === 'object' ? s.reports : {};
-  ['workouts', 'weights', 'meals'].forEach((k) => { if (!Array.isArray(s[k])) s[k] = []; });
+  ['workouts', 'weights', 'meals', 'exlog'].forEach((k) => { if (!Array.isArray(s[k])) s[k] = []; });
   if (!s.days || typeof s.days !== 'object') s.days = {};
   s.meals = (s.meals || []).map((m) => {
     if (m.k !== undefined) return m;
@@ -324,8 +324,8 @@ const FORMAT = `Ответь ТОЛЬКО одним JSON без пояснен�
 const PROMPT_PHOTO = `Ты помогаешь считать калории по фото еды. Определи каждое блюдо на фото, оцени порции по размеру тарелки и приборов. ${FORMAT}`;
 const PROMPT_TEXT = (q) => `Оцени пищевую ценность еды, которую описал пользователь: «${q}». Раздели на отдельные продукты или блюда. Если граммы не указаны, возьми типичную порцию. ${FORMAT}`;
 const toB64 = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });
-async function askAI(blob, text) {
-  const body = { text };
+async function askAI(blob, text, max) {
+  const body = { text, max };
   if (blob) body.image = await toB64(blob);
   const r = await fetch('/.netlify/functions/ai', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-access-code': getCode() }, body: JSON.stringify(body) });
   if (r.status === 401) throw { code: 'code' };
@@ -375,7 +375,7 @@ async function api(method, body) {
 }
 function mergeStates(a, b) {
   const newer = (a.updated || 0) >= (b.updated || 0) ? a : b, older = newer === a ? b : a, out = normalize(JSON.parse(JSON.stringify(newer)));
-  ['meals', 'workouts'].forEach((k) => { const ids = new Set(out[k].map((x) => x.id)); (older[k] || []).forEach((x) => { if (!ids.has(x.id)) out[k].push(x); }); });
+  ['meals', 'workouts', 'exlog'].forEach((k) => { const ids = new Set(out[k].map((x) => x.id)); (older[k] || []).forEach((x) => { if (!ids.has(x.id)) out[k].push(x); }); });
   const names = new Set(out.foods.map((f) => f.name)); (older.foods || []).forEach((f) => { if (!names.has(f.name)) out.foods.push(f); });
   const wd = new Set(out.weights.map((w) => w.date)); (older.weights || []).forEach((w) => { if (!wd.has(w.date)) out.weights.push(w); });
   out.weights.sort((x, y) => x.date.localeCompare(y.date));
@@ -564,7 +564,7 @@ function finishTimer(done) {
   if (done || min >= 2) {
     const kcal = kcalOf(t.p, min);
     S.workouts.push({ id: rnd(), date: ymd(), name: t.p.name, min, kcal }); save();
-    sheet = { type: 'done', name: t.p.name, min, kcal, full: done };
+    sheet = { type: 'done', name: t.p.name, min, kcal, full: done, wid: S.workouts[S.workouts.length - 1].id, feel: '' };
   }
   render();
 }
@@ -609,6 +609,7 @@ function viewDiary() {
     <section class="card counter"><div><div class="small mute">Вода, стаканов</div><div class="val">${info.water || 0}<span class="mute small"> из 8</span></div></div><div class="pm"><button data-a="water" data-d="-1" aria-label="Меньше">−</button><button data-a="water" data-d="1" aria-label="Больше">+</button></div></section>
     <section class="card counter"><div><div class="small mute">Шаги</div><div class="val">${info.steps ? fmt(info.steps) : '—'}</div></div><div class="pm"><button data-a="steps" aria-label="Ввести шаги">${ic('plus')}</button></div></section>
   </div>
+  <button class="btn soft" data-a="fridge">${ic('apple')} План питания из холодильника</button>
   <button class="btn soft" data-a="dayreport">${ic('chart')} Отчёт за этот день</button>`;
 }
 function viewTrain() {
@@ -639,6 +640,7 @@ function viewTrain() {
     <div class="chips" style="margin:6px 0 8px"><span class="chip">${min} мин</span><span class="chip w">≈ ${kcalOf(p, min)} ккал</span>${isT ? '<span class="chip rec">Сегодня по плану</span>' : ''}${later ? '<span class="chip mute">Для следующего уровня</span>' : ''}${p.hard ? '<span class="chip mute">Нагрузка на суставы выше</span>' : ''}</div></div></div>
     <p class="small mute" style="margin-bottom:12px">${p.walk ? 'Обычная ходьба в хорошем темпе, таймер отсчитает время.' : p.build ? 'Разминка, пять раз по 2 минуты быстрым шагом и заминка.' : p.ex.map((e) => e[0]).slice(0, 4).join(', ') + ' и другие'}</p>
     <button class="btn ${isT ? '' : 'ghost'}" data-a="start" data-id="${p.id}" data-m="${m}">Начать</button></section>`; }).join('')}
+  ${journalHtml()}
   <div class="sec"><h2>За 7 дней</h2><button class="small" style="color:var(--brand);font-weight:600" data-a="wmanual">+ Записать своё</button></div>
   <section class="card"><div class="list">${week.length ? week.map((w) => `<div class="item"><span class="t">${w.date.slice(8)}.${w.date.slice(5, 7)}</span><span class="n">${esc(w.name)}<br><span class="small mute">${w.min} мин</span></span><span class="k">${w.kcal} ккал</span><button class="x" data-a="delw" data-id="${w.id}" aria-label="Удалить">${ic('trash')}</button></div>`).join('') : '<div class="empty">Тренировок пока нет. Начните с плана на сегодня.</div>'}</div></section>`;
 }
@@ -677,6 +679,107 @@ function viewOverview() {
   <div class="grid2"><section class="card"><div class="small mute">Дней подряд с записями</div><div class="big-num" style="margin-top:8px">${streak()}</div></section>
   <section class="card"><div class="small mute">Тренировок за неделю</div><div class="big-num" style="margin-top:8px">${weekWorkouts()}</div></section></div>`;
 }
+/* ---------- дневник упражнений и разбор тренировок ---------- */
+const FEEL = { easy: 'Легко', ok: 'Нормально', hard: 'Тяжело' };
+let trBusy = false, trErr = '';
+const exNames = () => { const set = new Set(); PROGRAMS.forEach((p) => p.ex.forEach((e) => { if (!p.walk) set.add(e[0]); })); S.exlog.forEach((e) => set.add(e.name)); return [...set].slice(0, 150); };
+const newEx = (from) => Object.assign({ type: 'ex', exn: '', sets: 3, reps: 10, kg: '', min: '', feel: 'ok', pain: false, note: '' }, from || {});
+function journalHtml() {
+  const from = addDays(ymd(), -13), list = S.exlog.filter((e) => e.date >= from).slice().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  let last = '';
+  const rows = list.map((e) => { const head = e.date !== last ? `<div class="lbl" style="margin:12px 0 2px">${e.date === ymd() ? 'Сегодня' : fmtDate(e.date)}</div>` : ''; last = e.date;
+    return `${head}<div class="item"><button class="n grow" style="text-align:left" data-a="exrep" data-id="${e.id}"><b style="font-weight:500">${esc(e.name)}</b><br><span class="small mute">${e.sets && e.reps ? e.sets + '×' + e.reps : ''}${n0(e.kg) ? ' · ' + e.kg + ' кг' : ''}${n0(e.min) ? ' · ' + e.min + ' мин' : ''}${e.pain ? ' · была боль' : ''}</span></button><span class="chip ${e.feel === 'hard' || e.pain ? 'w' : 'mute'}">${FEEL[e.feel] || ''}</span><button class="x" data-a="delex" data-id="${e.id}" aria-label="Удалить">${ic('trash')}</button></div>`; }).join('');
+  return `<div class="sec"><h2>Дневник упражнений</h2><button class="small" style="color:var(--brand);font-weight:600" data-a="addex">+ Записать</button></div>
+  <section class="card">${rows ? `<div class="list">${rows}</div><p class="tiny mute" style="margin-top:8px">Нажмите на запись, чтобы повторить её сегодня.</p>` : '<div class="empty">Записывайте упражнения: подходы, повторы, вес и как далось. ИИ по ним поправит план.</div>'}</section>
+  ${trainAiCard()}`;
+}
+function compactTrain() {
+  const from = addDays(ymd(), -27), pl = weekPlan();
+  return { profile: profLine(), program_week: weekIdx() + 1, planned_this_week: pl.days.map((d) => (d.rest ? 'отдых' : d.p.name + ' ' + d.min + ' мин')),
+    sessions: S.workouts.filter((w) => w.date >= from).slice(-40).map((w) => ({ d: w.date.slice(5), name: w.name, min: w.min, feel: w.feel || '' })),
+    exercises: S.exlog.filter((e) => e.date >= from).slice(-60).map((e) => ({ d: e.date.slice(5), name: e.name, sets: e.sets, reps: e.reps, kg: n0(e.kg) || null, min: n0(e.min) || null, feel: e.feel, pain: !!e.pain, note: String(e.note || '').slice(0, 80) })) };
+}
+const PROMPT_TRAIN = (st) => `Ты внимательный тренер по безопасному похудению. Проанализируй тренировки пользователя за 4 недели: сессии с таймера (sessions), записи упражнений (exercises) и текущий недельный план (planned_this_week). Данные: ${JSON.stringify(st)}
+Правила: пиши по-русски, тепло и по делу. Нагрузку повышай не быстрее 10-15% в неделю. Если ИМТ 30 и выше, не предлагай прыжки и бег, выбирай ходьбу, силу и упражнения сидя или с опорой. Если есть боль (pain=true) или feel=hard много раз подряд, предложи снизить нагрузку и сказать врачу, если боль повторяется. Не ставь диагнозов. Если данных мало, скажи об этом и дай базовые советы. Опирайся на рекомендации: постепенно до 150 минут в неделю, силовые два раза в неделю.
+Ответь ТОЛЬКО одним JSON без markdown: {"summary":"2-3 предложения","good":["до 3 пунктов"],"improve":["до 3 конкретных коррекций подхода"],"next_week":[{"day":"Пн","what":"что делать, 1 предложение"}],"warnings":["предупреждения, если нужны, иначе пустой список"]}`;
+async function runTrain() {
+  trBusy = true; trErr = ''; render();
+  try {
+    const st = compactTrain(), r = await askAI(null, PROMPT_TRAIN(st), 1800), arr = (a, n = 3) => (Array.isArray(a) ? a.map((x) => String(x)).filter(Boolean).slice(0, n) : []);
+    if (!r.summary) throw { code: 'parse' };
+    S.reports.train = { at: Date.now(), sig: hash(JSON.stringify(st)), summary: String(r.summary), good: arr(r.good), improve: arr(r.improve), warnings: arr(r.warnings),
+      next_week: (Array.isArray(r.next_week) ? r.next_week : []).slice(0, 7).map((x) => ({ day: String(x.day || '').slice(0, 12), what: String(x.what || '').slice(0, 200) })).filter((x) => x.what) }; save();
+  } catch (e) { trErr = aiError(e, {}); }
+  trBusy = false; render();
+}
+function trainAiCard() {
+  const rep = S.reports.train, has = S.workouts.length + S.exlog.length > 0, stale = rep && rep.sig !== hash(JSON.stringify(compactTrain()));
+  const list = (t, a) => (a && a.length ? `<div class="lbl">${t}</div><ul class="tips" style="margin-top:6px">${a.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '');
+  return `<section class="card ai"><h3>${ic('spark')} Разбор тренировок от ИИ</h3>
+    ${rep ? `<p class="sum">${esc(rep.summary)}</p>${rep.warnings.length ? `<div class="note" style="margin-top:8px">${rep.warnings.map(esc).join('<br>')}</div>` : ''}${list('Что получилось', rep.good)}${list('Как скорректировать', rep.improve)}
+      ${rep.next_week.length ? `<div class="lbl">План на следующую неделю</div>${rep.next_week.map((x) => `<div class="row small" style="padding:6px 0;align-items:flex-start"><b style="width:34px;flex:none">${esc(x.day)}</b><span>${esc(x.what)}</span></div>`).join('')}` : ''}${stale ? '<p class="tiny mute" style="margin-top:10px">С момента разбора записи изменились.</p>' : ''}`
+      : '<p class="small mute" style="margin-top:6px">ИИ посмотрит на ваши тренировки и записи, найдёт, где нагрузка велика или мала, и предложит план на неделю. Это совет, а не назначение врача.</p>'}
+    ${trBusy ? '<div class="row" style="margin-top:12px"><div class="spin"></div><span class="mute">Анализирую…</span></div>' : ''}${trErr ? `<div class="note" style="margin-top:12px">${esc(trErr)}</div>` : ''}
+    <button class="btn ${rep && !stale ? 'ghost' : ''}" style="margin-top:14px" data-a="aitrain" ${trBusy || !has ? 'disabled' : ''}>${!has ? 'Сначала сделайте тренировку или запишите упражнение' : rep ? (stale ? 'Обновить разбор' : 'Разобрать заново') : 'Разобрать с помощью ИИ'}</button></section>`;
+}
+function exSheet(s) {
+  const inp = (f, lab, type = 'number') => `<label>${lab}<input data-f="${f}" type="${type}" ${type === 'number' ? 'inputmode="decimal"' : ''} value="${esc(s[f] ?? '')}"></label>`;
+  return `<h2>Записать упражнение</h2>
+  <label>Упражнение<input data-f="exn" type="text" list="exlist" placeholder="Например: Приседания к стулу" value="${esc(s.exn)}" autocomplete="off"></label><datalist id="exlist">${exNames().map((n) => `<option value="${esc(n)}"></option>`).join('')}</datalist>
+  <div class="grid2">${inp('sets', 'Подходов')}${inp('reps', 'Повторов')}${inp('kg', 'Вес, кг (если есть)')}${inp('min', 'Минут (если по времени)')}</div>
+  <div class="lbl">Как далось</div><div class="mchips">${Object.entries(FEEL).map(([k, n]) => `<button data-a="exfeel" data-id="${k}" aria-current="${s.feel === k}">${n}</button>`).join('')}<button data-a="expain" aria-current="${s.pain}" style="${s.pain ? 'background:var(--warm-soft);color:var(--warm)' : ''}">Была боль</button></div>
+  ${inp('note', 'Заметка (по желанию)', 'text')}
+  <button class="btn" data-a="saveex" ${s.exn.trim() && ((n0(s.sets) > 0 && n0(s.reps) > 0) || n0(s.min) > 0) ? '' : 'disabled'}>Сохранить</button><button class="btn soft" data-a="close">Отмена</button>`;
+}
+
+/* ---------- холодильник: план питания от ИИ ---------- */
+const newFridge = () => ({ type: 'fridge', fridge: S.fridge || '', avoid: '', mode: mealsOf(ymd()).length ? 'rest' : 'full', busy: false, err: '' });
+const PROMPT_PLAN = (o) => `Ты помощник по питанию в приложении для похудения. Составь план питания из продуктов, которые уже есть у пользователя. Данные: ${JSON.stringify(o)}
+Правила: бери в основном продукты из fridge; можно добавить базовое (соль, специи, вода, чай, немного масла). Если чего-то важного не хватает, перечисли в buy не больше 5 позиций. Уложись в budget_kcal (допустимо ±5%) и постарайся набрать protein_target_g белка. Распредели еду по приёмам из meals (поле meal = key). Учитывай avoid. Не предлагай голодание и добавки. Блюда простые, граммы реалистичные, рецепт в 1-2 предложения. kcal, protein, carbs, fat указывай на всю порцию в grams.
+Ответь ТОЛЬКО одним JSON без markdown: {"summary":"1-2 предложения","meals":[{"meal":"key приёма","title":"название блюда","recipe":"как приготовить","items":[{"name":"продукт","grams":число,"kcal":число,"protein":число,"carbs":число,"fat":число}]}],"buy":["чего не хватает"],"note":""}`;
+async function runPlan() {
+  const s = sheet, txt = (s.fridge || '').trim();
+  if (txt.length < 3) { s.err = 'Перечислите продукты через запятую, например: курица, гречка, яйца, творог, огурцы.'; render(); return; }
+  S.fridge = txt; save();
+  const today = ymd(), eaten = sumOf(today), burned = burnedOf(today), mg = macroGoals(), goal = S.profile.goal, full = s.mode === 'full' || !mealsOf(today).length;
+  const budget = full ? goal : Math.max(0, goal - eaten.kcal + burned);
+  if (budget < 150) { s.err = 'На сегодня норма почти выбрана. Если нужен план с нуля, выберите «Весь день».'; render(); return; }
+  const have = new Set(mealsOf(today).map((e) => e.meal)), left = full ? MEALS : MEALS.filter((m) => !have.has(m[0])), ml = left.length ? left : [MEALS[3]];
+  const o = { profile: profLine(), fridge: txt, avoid: (s.avoid || '').trim(), budget_kcal: Math.round(budget), protein_target_g: Math.round(full ? mg.p : Math.max(0, mg.p - eaten.p)), carbs_g: Math.round(mg.c), fat_g: Math.round(mg.f), meals: ml.map((m) => ({ key: m[0], name: m[1] })) };
+  s.busy = true; s.err = ''; render();
+  try {
+    const r = await askAI(null, PROMPT_PLAN(o), 2600);
+    const ms = (Array.isArray(r.meals) ? r.meals : []).slice(0, 5).map((m) => ({ meal: MEALS.some((x) => x[0] === m.meal) ? m.meal : 'snack', title: String(m.title || 'Блюдо').slice(0, 80), recipe: String(m.recipe || '').slice(0, 300),
+      items: (Array.isArray(m.items) ? m.items : []).slice(0, 10).map((it) => ({ name: String(it.name || 'Продукт').slice(0, 60), g: Math.max(1, Math.round(n0(it.grams)) || 100), kcal: n0(it.kcal), p: n0(it.protein), c: n0(it.carbs), f: n0(it.fat) })) })).filter((m) => m.items.length);
+    if (!ms.length) throw { code: 'parse' };
+    S.plan = { date: today, budget: Math.round(budget), summary: String(r.summary || ''), meals: ms, buy: (Array.isArray(r.buy) ? r.buy : []).map(String).slice(0, 6), note: String(r.note || '') }; save();
+  } catch (e) { s.err = aiError(e, {}); }
+  if (sheet === s) { s.busy = false; render(); }
+}
+const planKcal = (m) => m.items.reduce((a, it) => a + it.kcal, 0);
+function addPlanMeal(i) {
+  const pl = S.plan; if (!pl) return; const list = i === 'all' ? pl.meals : [pl.meals[n0(i)]].filter(Boolean);
+  list.forEach((m) => m.items.forEach((it) => S.meals.push({ id: rnd(), date: ymd(), meal: m.meal, time: hhmm(), name: it.name, g: it.g, k: (it.kcal / it.g) * 100, p: (it.p / it.g) * 100, c: (it.c / it.g) * 100, f: (it.f / it.g) * 100 })));
+  save(); day = ymd(); sheet = null; say('Добавлено в дневник');
+}
+function fridgeSheet(s) {
+  const pl = S.plan && S.plan.date === ymd() ? S.plan : null, mname = (k) => (MEALS.find((m) => m[0] === k) || [])[1] || '';
+  const total = pl ? pl.meals.reduce((a, m) => a + planKcal(m), 0) : 0;
+  return `<h2>Что в холодильнике</h2>
+  <label>Продукты через запятую<textarea data-f="fridge" rows="3" placeholder="Курица, гречка, яйца, творог, огурцы, помидоры, яблоки">${esc(s.fridge)}</textarea></label>
+  <label>Что не ем или аллергия (по желанию)<input data-f="avoid" type="text" value="${esc(s.avoid)}" placeholder="Например: рыба, орехи"></label>
+  <div class="mchips"><button data-a="fmode" data-id="rest" aria-current="${s.mode === 'rest'}">Остаток дня</button><button data-a="fmode" data-id="full" aria-current="${s.mode === 'full'}">Весь день</button></div>
+  <button class="btn" data-a="doplan" ${s.busy ? 'disabled' : ''}>${pl ? 'Составить заново' : 'Составить план питания'}</button>
+  ${s.busy ? '<div class="row"><div class="spin"></div><span class="mute">Составляю план, это займёт до минуты…</span></div>' : ''}${s.err ? `<div class="note">${esc(s.err)}</div>` : ''}
+  ${pl && !s.busy ? `<div class="lbl">План на сегодня</div>${pl.summary ? `<p class="small">${esc(pl.summary)}</p>` : ''}<p class="small mute">Всего ${fmt(total)} ккал при бюджете ${fmt(pl.budget)}.${total < pl.budget * 0.85 ? ' Часть бюджета осталась свободной: добавьте перекус по желанию.' : ''}</p>
+    ${pl.meals.map((m, i) => `<div class="draft" style="padding:10px 12px"><div class="row between"><b>${mname(m.meal)}: ${esc(m.title)}</b><span class="num small" style="font-weight:600">${fmt(planKcal(m))}</span></div>
+      <div class="small mute" style="margin-top:4px">${m.items.map((it) => `${esc(it.name)} ${it.g} г`).join(', ')}</div>${m.recipe ? `<p class="small" style="margin-top:6px">${esc(m.recipe)}</p>` : ''}
+      <button class="btn soft" style="margin-top:10px;min-height:42px" data-a="planadd" data-i="${i}">Добавить в дневник</button></div>`).join('')}
+    ${pl.buy.length ? `<div class="ok">Не хватает: ${pl.buy.map(esc).join(', ')}</div>` : ''}${pl.note ? `<p class="tiny mute">${esc(pl.note)}</p>` : ''}
+    <button class="btn" data-a="planadd" data-i="all">Добавить весь план в дневник</button>` : ''}
+  <button class="btn soft" data-a="close">Закрыть</button>`;
+}
+
 /* ---------- отчёты: день и неделя ---------- */
 const floorKcal = () => (S.profile.sex === 'm' ? 1500 : 1200);
 const rnd1 = (n) => Math.round(n * 10) / 10;
@@ -875,10 +978,12 @@ function viewSheet() {
   const inp = (f, lab, type = 'text', extra = '') => `<label>${lab}<input data-f="${f}" type="${type}" ${type === 'number' ? 'inputmode="decimal"' : ''} value="${esc(s[f] ?? '')}" ${extra}></label>`;
   let body = '';
   if (s.type === 'add') body = viewAdd(s);
+  else if (s.type === 'ex') body = exSheet(s);
+  else if (s.type === 'fridge') body = fridgeSheet(s);
   else if (s.type === 'weight') body = `<h2>Записать вес</h2>${inp('kg', 'Вес, кг', 'number')}<button class="btn" data-a="saveweight" ${n0(s.kg) > 20 ? '' : 'disabled'}>Сохранить</button><button class="btn soft" data-a="close">Отмена</button>`;
   else if (s.type === 'steps') body = `<h2>Шаги за день</h2><p class="mute small">Откройте приложение «Здоровье» на iPhone и посмотрите шаги за сегодня.</p>${inp('steps', 'Шагов', 'number')}<button class="btn" data-a="savesteps">Сохранить</button><button class="btn soft" data-a="close">Отмена</button>`;
   else if (s.type === 'wmanual') body = `<h2>Своя тренировка</h2>${inp('name', 'Что делали')}<div class="grid2">${inp('min', 'Минут', 'number')}${inp('kcal', 'Ккал (примерно)', 'number')}</div><button class="btn" data-a="savew" ${n0(s.min) > 0 ? '' : 'disabled'}>Сохранить</button><button class="btn soft" data-a="close">Отмена</button>`;
-  else if (s.type === 'done') body = `<h2>${s.full ? 'Готово!' : 'Тренировка записана'}</h2><p>${esc(s.name)}: ${s.min} мин, примерно ${s.kcal} ккал. Запись добавлена в дневник.</p><button class="btn" data-a="close">Отлично</button>`;
+  else if (s.type === 'done') body = `<h2>${s.full ? 'Готово!' : 'Тренировка записана'}</h2><p>${esc(s.name)}: ${s.min} мин, примерно ${s.kcal} ккал. Запись добавлена в дневник.</p><div class="lbl">Как прошло?</div><div class="mchips">${Object.entries(FEEL).map(([k, n]) => `<button data-a="wfeel" data-id="${k}" aria-current="${s.feel === k}">${n}</button>`).join('')}<button data-a="wfeel" data-id="pain" aria-current="${s.feel === 'pain'}">Болели суставы</button></div><button class="btn" data-a="close">Готово</button>`;
   else if (s.type === 'keyset') body = `<h2>Код доступа</h2><label>Код<input data-f="keyv" type="text" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(s.keyv || '')}"></label><p class="small mute">Код задаётся в Netlify (переменная ACCESS_CODES). Он нужен, чтобы чужие не тратили бесплатный лимит ИИ и не видели ваши данные. По одному коду данные хранятся в облаке и доступны с любого вашего устройства.</p><button class="btn" data-a="savekey2">Сохранить</button><button class="btn soft" data-a="close">Отмена</button>`;
   else if (s.type === 'backup') body = `<h2>Резервная копия</h2><p class="small mute">Скопируйте текст и сохраните в заметках. Чтобы восстановить данные или перенести на другой телефон, вставьте текст сюда и нажмите «Восстановить».</p>
     <textarea id="bk" data-f="blob" rows="8" spellcheck="false">${esc(s.blob)}</textarea><div class="grid2"><button class="btn ghost" data-a="copybk">Скопировать</button><button class="btn" data-a="dorestore">Восстановить</button></div><button class="btn soft" data-a="close">Закрыть</button>`;
@@ -929,6 +1034,7 @@ document.addEventListener('input', (e) => {
   if (t.dataset.f) {
     setPath(sheet, t.dataset.f, t.value);
     if (t.dataset.f === 'q') { const el = document.getElementById('local'); if (el) el.innerHTML = localHtml(sheet); }
+    if (sheet.type === 'ex') { const b = document.querySelector('[data-a="saveex"]'); if (b) b.disabled = !(sheet.exn.trim() && ((n0(sheet.sets) > 0 && n0(sheet.reps) > 0) || n0(sheet.min) > 0)); }
     if (['kg', 'min'].includes(t.dataset.f)) { const b = document.querySelector('.sheet [data-a="saveweight"],.sheet [data-a="savew"]'); if (b) b.disabled = !(n0(t.value) > (t.dataset.f === 'kg' ? 20 : 0)); }
   }
   if (t.dataset.p) {
@@ -1007,6 +1113,18 @@ document.addEventListener('click', (e) => {
     case 'airep': runReport(el.dataset.k); break;
     case 'dayreport': rday = day; ptab = 'day'; tab = 'progress'; repErr = ''; window.scrollTo(0, 0); render(); break;
     case 'syncnow': syncNow(); break;
+    case 'addex': sheet = newEx(); render(); break;
+    case 'exrep': { const e = S.exlog.find((x) => x.id === id); if (e) { sheet = newEx({ exn: e.name, sets: e.sets, reps: e.reps, kg: e.kg || '', min: e.min || '', feel: 'ok' }); render(); } break; }
+    case 'exfeel': s.feel = id; render(); break;
+    case 'expain': s.pain = !s.pain; render(); break;
+    case 'saveex': S.exlog.push({ id: rnd(), date: ymd(), name: s.exn.trim().slice(0, 80), sets: Math.round(n0(s.sets)), reps: Math.round(n0(s.reps)), kg: n0(s.kg), min: n0(s.min), feel: s.feel, pain: !!s.pain, note: (s.note || '').trim().slice(0, 200) }); save(); sheet = null; say('Записано'); break;
+    case 'delex': S.exlog = S.exlog.filter((x) => x.id !== id); save(); render(); break;
+    case 'aitrain': runTrain(); break;
+    case 'wfeel': { const w = S.workouts.find((x) => x.id === s.wid); if (w) { w.feel = id; save(); } s.feel = id; render(); break; }
+    case 'fridge': sheet = newFridge(); render(); break;
+    case 'fmode': s.mode = id; render(); break;
+    case 'doplan': runPlan(); break;
+    case 'planadd': addPlanMeal(el.dataset.i); break;
     case 'switch': lset('hudeem-who', ''); location.reload(); break;
     case 'close': closeSheet(); break;
   }
