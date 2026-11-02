@@ -213,16 +213,18 @@ textarea{resize:vertical;font-size:13px}
 .sync{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mute)} .sync i{width:8px;height:8px;border-radius:50%;background:var(--mute)} .sync.ok i{background:var(--brand)} .sync.err i{background:var(--warm)}
 .safety{border-left:4px solid var(--c)}
 /* страница программы и картинки упражнений */
+.ditem+.ditem{border-top:1px solid var(--line)} .iedit{padding:2px 0 12px;display:flex;flex-direction:column;gap:10px} .iedit input{background:var(--card)}
+.chev{display:grid;transition:transform .2s} .chev.open{transform:rotate(90deg)}
 .page{position:fixed;inset:0;z-index:35;background:var(--bg);display:flex;flex-direction:column}
 .pagehead{display:flex;align-items:center;gap:12px;padding:max(12px,env(safe-area-inset-top,0px)) 16px 10px;background:var(--bg)}
 .pagehead h2{font:700 21px var(--f-body)} .pgb{width:42px;height:42px;border-radius:13px;background:var(--card);border:1px solid var(--line);display:grid;place-items:center;flex:none}
 .pbody{flex:1;overflow:auto;padding:4px max(16px,env(safe-area-inset-right,0px)) 24px;display:flex;flex-direction:column;gap:12px;max-width:520px;width:100%;margin:0 auto;overscroll-behavior:contain}
 .pfoot{padding:10px 16px calc(12px + env(safe-area-inset-bottom,0px));background:var(--bg);border-top:1px solid var(--line)} .pfoot .btn{max-width:488px;margin:0 auto}
 .prow{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:14px 16px} .prow .icon:last-child{color:var(--mute)}
-.exm{position:relative;width:88px;height:88px;border-radius:16px;overflow:hidden;background:#fff;flex:none;border:1px solid var(--line)}
+.exm{position:relative;width:96px;height:96px;border-radius:16px;overflow:hidden;background:#fff;flex:none;border:1px solid var(--line)}
 .exm img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.exm img.b{opacity:0;animation:xf 1.6s ease-in-out infinite alternate}
-@keyframes xf{from{opacity:0}to{opacity:1}}
+.exm img.b{opacity:0;animation:xf 1.2s linear infinite}
+@keyframes xf{0%,49.9%{opacity:0}50%,100%{opacity:1}}
 .exm .phi{display:none;position:absolute;inset:0;place-items:center;color:var(--brand)} .exm.ph{background:var(--brand-soft)} .exm.ph .phi{display:grid} .exm.ph img{display:none}
 .exm.big{width:min(86vw,300px);height:min(30vh,230px)}
 .timer.hasm .big{font-size:76px}
@@ -268,6 +270,7 @@ const I = {
   chart: '<path d="M4 19V5M4 19h16M8 15l3.5-4 3 2.5L19 8"/>',
   more: '<circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/>',
   plus: '<path d="M12 5v14M5 12h14"/>', left: '<path d="M15 5l-7 7 7 7"/>', right: '<path d="M9 5l7 7-7 7"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
   trash: '<path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/>', star: '<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 17l-5.2 2.7 1-5.9L3.5 9.7l5.9-.8z"/>',
   sun: '<circle cx="12" cy="13" r="3.5"/><path d="M12 4v2.5M4.5 13H2M22 13h-2.5M6.3 7.3l1.7 1.7M17.7 7.3L16 9M3 20h18"/>',
   bowl: '<path d="M3.5 11h17a8.5 8.5 0 0 1-17 0z"/><path d="M9 7c0-1.6 1.2-1.9 1.2-3.5M14 7c0-1.6 1.2-1.9 1.2-3.5"/>',
@@ -306,7 +309,7 @@ function normalize(o) {
 }
 let S = (() => { try { return normalize(JSON.parse(localStorage.getItem(LS))); } catch { return normalize(null); } })();
 let tab = 'diary', day = ymd(), sheet = null, toast = '', timerRun = null, pool = [];
-let ptab = 'over', rday = ymd(), rweek = '', repBusy = '', repErr = '', openProg = null, walkMin = 0;
+let ptab = 'over', rday = ymd(), rweek = '', repBusy = '', repErr = '', openProg = null, walkMin = 0, progOpen = false;
 
 const persist = () => { try { localStorage.setItem(LS, JSON.stringify(S)); } catch {} };
 function save() { S.updated = Date.now(); persist(); schedulePush(); }
@@ -381,7 +384,10 @@ const SY = 'hudeem-sync:' + who;
 let sy = (() => { try { return Object.assign({ base: 0, dirty: false, at: 0 }, JSON.parse(localStorage.getItem(SY))); } catch { return { base: 0, dirty: false, at: 0 }; } })();
 sy.state = ''; sy.msg = '';
 let syBusy = false, pushT = null, lastPull = 0;
-const saveSy = () => { try { localStorage.setItem(SY, JSON.stringify({ base: sy.base, dirty: sy.dirty, at: sy.at })); } catch {} };
+const saveSy = () => { try { localStorage.setItem(SY, JSON.stringify({ base: sy.base, dirty: sy.dirty, at: sy.at, force: !!sy.force })); } catch {} };
+function wipeAll() { S = normalize(null); S.updated = Date.now(); persist(); sy.base = 0; sy.dirty = true; sy.force = true; saveSy(); }
+const EPOCH = '2026-11-03-fresh', EPK = 'hudeem-epoch:' + who;
+if (lget(EPK) !== EPOCH) { const had = !!lget(LS); lset(EPK, EPOCH); if (had && lget(EPK) === EPOCH) wipeAll(); }
 function schedulePush() { sy.dirty = true; saveSy(); if (!getCode()) return; clearTimeout(pushT); pushT = setTimeout(syncNow, 1500); }
 async function api(method, body) {
   const r = await fetch('/.netlify/functions/sync', { method, headers: { 'Content-Type': 'application/json', 'x-access-code': getCode() }, body: body ? JSON.stringify(body) : undefined });
@@ -410,6 +416,12 @@ async function syncNow() {
   if (syBusy || !getCode()) return;
   syBusy = true; sy.state = 'busy'; paintSync(); let changed = false;
   try {
+    if (sy.force) {
+      const sent = S.updated, p = await api('PUT', { data: S, base: Number.MAX_SAFE_INTEGER });
+      if (p.status === 401) throw { msg: 'Нет доступа к облаку. Обновите страницу.' };
+      if (p.status !== 200 || !p.j) throw { msg: 'Не удалось очистить облако. Попробуем позже.' };
+      sy.base = p.j.updated || sent; sy.force = false; if (S.updated === sent) sy.dirty = false; sy.state = 'ok'; sy.at = Date.now(); saveSy(); syBusy = false; paintSync(); return;
+    }
     const g = await api('GET');
     if (g.status === 401) { setCode(''); throw { msg: 'Код доступа не подошёл. Введите его заново.' }; }
     if (g.status !== 200 || !g.j) throw { msg: g.j && g.j.error === 'setup' ? 'Хранилище ещё не настроено на сервере.' : 'Сервер не ответил. Данные сохранены на телефоне.' };
@@ -700,8 +712,8 @@ function viewProg() {
     ${p.ex.map((e, i) => `<section class="card"><div class="row" style="align-items:flex-start">${mediaHtml(e[0])}<div class="grow"><div class="small mute">${i + 1} из ${p.ex.length} · ${p.stretch ? 40 : w} сек</div><b style="font-size:16px">${esc(e[0])}</b><p class="small" style="margin:4px 0 6px">${esc(e[1])}</p><a class="small" style="font-weight:600" href="${ytUrl(e[0])}" target="_blank" rel="noopener">Смотреть видео</a></div></div></section>`).join('')}
     ${EXI === null ? '<p class="tiny mute">Картинки загружаются из открытой базы упражнений. Нужен интернет.</p>' : ''}`;
   return `<div class="page"><div class="pagehead"><button class="pgb" data-a="progback" aria-label="Назад">${ic('left')}</button><h2>${p.name}</h2></div>
-  <div class="pbody"><div class="chips" style="margin:0"><span class="chip">${min} мин</span><span class="chip w">≈ ${kcalOf(p, min)} ккал</span>${p.hard ? '<span class="chip mute">Нагрузка на суставы выше</span>' : ''}${p.lv > level() ? '<span class="chip mute">Для следующего уровня</span>' : ''}</div>
-  <p class="small">${DESC[p.id] || ''}</p>${body}</div>
+  <div class="pbody"><div class="chips" style="margin:0"><span class="chip">${min} мин</span><span class="chip">сожжёте ≈ ${kcalOf(p, min)} ккал</span>${p.hard ? '<span class="chip mute">Нагрузка на суставы выше</span>' : ''}${p.lv > level() ? '<span class="chip mute">Для следующего уровня</span>' : ''}</div>
+  <p class="small">${DESC[p.id] || ''}</p><p class="tiny mute">Расход считается по вашему весу${lastWeight() ? ' (' + r1(lastWeight()) + ' кг)' : ': вес не указан, взято 70 кг, запишите вес в «Прогресс»'} и только сверх обычного расхода калорий.</p>${body}</div>
   <div class="pfoot"><button class="btn" data-a="start" data-id="${p.id}" data-m="${m}">Начать · ${min} мин</button></div></div>`;
 }
 
@@ -727,14 +739,14 @@ function viewTrain() {
     <li>Боль в груди, головокружение или сильная одышка значат «стоп». Острая боль в суставе тоже.</li>
     <li>Не задерживайте дыхание, пейте воду. Прыжков в программах нет, чтобы беречь колени.</li></ul>
     <p class="tiny mute" style="margin-top:10px">Ориентир по рекомендациям ACSM: постепенно дойти до 150 минут умеренной активности в неделю, затем до 200-300 для устойчивого результата, плюс силовые два раза в неделю.</p></section>
-  <div class="sec"><h2>Программы</h2><span class="small mute">нажмите, чтобы открыть</span></div>
-  ${sorted.map((p) => { const m = p.walk ? wm : 0, min = minOf(p, m), isT = tdy && tdy.p && tdy.p.id === p.id, later = p.lv > pl.level;
+  <button class="card prow" data-a="progtoggle" aria-expanded="${progOpen}"><div class="grow"><b style="font-size:17px">Программы</b><div class="small mute">${PROGRAMS.length} программ, нажмите чтобы ${progOpen ? 'скрыть' : 'раскрыть'}</div></div><span class="chev ${progOpen ? 'open' : ''}">${ic('right')}</span></button>
+  ${!progOpen ? '' : sorted.map((p) => { const m = p.walk ? wm : 0, min = minOf(p, m), isT = tdy && tdy.p && tdy.p.id === p.id, later = p.lv > pl.level;
     return `<button class="card prow" data-a="openprog" data-id="${p.id}"><div class="pico ${p.hard ? 'hard' : ''}">${ic(p.icon)}</div><div class="grow"><b style="font-size:16px">${p.name}</b>
     <div class="small mute">${min} мин · ≈ ${kcalOf(p, min)} ккал${!p.walk && !p.build ? ' · ' + p.ex.length + ' упр.' : ''}</div>
     ${isT || later || p.hard ? `<div class="chips" style="margin:6px 0 0">${isT ? '<span class="chip rec">Сегодня по плану</span>' : ''}${later ? '<span class="chip mute">Позже</span>' : ''}${p.hard ? '<span class="chip mute">Нагрузка на суставы</span>' : ''}</div>` : ''}</div>${ic('right')}</button>`; }).join('')}
   ${journalHtml()}
   <div class="sec"><h2>За 7 дней</h2><button class="small" style="color:var(--brand);font-weight:600" data-a="wmanual">+ Записать своё</button></div>
-  <section class="card"><div class="list">${week.length ? week.map((w) => `<div class="item"><span class="t">${w.date.slice(8)}.${w.date.slice(5, 7)}</span><span class="n">${esc(w.name)}<br><span class="small mute">${w.min} мин</span></span><span class="k">${w.kcal} ккал</span><button class="x" data-a="delw" data-id="${w.id}" aria-label="Удалить">${ic('trash')}</button></div>`).join('') : '<div class="empty">Тренировок пока нет. Начните с плана на сегодня.</div>'}</div></section>`;
+  <section class="card"><div class="list">${week.length ? week.map((w) => `<div class="item"><span class="t">${w.date.slice(8)}.${w.date.slice(5, 7)}</span><button class="n" style="text-align:left" data-a="wedit" data-id="${w.id}">${esc(w.name)}<br><span class="small mute">${w.min} мин · нажмите, чтобы исправить</span></button><span class="k">${w.kcal} ккал</span><button class="x" data-a="delw" data-id="${w.id}" aria-label="Удалить">${ic('trash')}</button></div>`).join('') : '<div class="empty">Тренировок пока нет. Начните с плана на сегодня.</div>'}</div></section>`;
 }
 function weightChart() {
   const ws = S.weights.slice(-30), g = S.profile.weightGoal;
@@ -985,6 +997,7 @@ function viewMore() {
     <button class="mrow" data-a="profile"><b>Профиль и цели</b><span>${fmt(S.profile.goal)} ккал в день</span></button>
     <button class="mrow" data-a="switch"><b>Профиль: ${esc(PROFILES[who].name)}</b><span>сменить</span></button>
     <button class="mrow" data-a="backup"><b>Резервная копия данных</b><span>копировать</span></button>
+    <button class="mrow" data-a="resetask"><b style="color:var(--warm)">Сбросить все данные</b><span>начать с нуля</span></button>
   </section>
   <section class="card"><div class="row between"><h3 style="font-size:16px">Облако</h3><button class="small" style="color:var(--brand);font-weight:600" data-a="syncnow">Синхронизировать</button></div>
     <div id="syncline" class="sync" style="margin-top:8px"></div>
@@ -1007,10 +1020,13 @@ function viewTimer() {
 const itemTot = (it) => (it.k * it.g) / 100;
 function draftHtml(s) {
   if (!s.items.length) return '';
-  return `<div class="lbl">${s.edit ? 'Порция' : 'К добавлению'}</div><div class="draft">${s.items.map((it) => `<div class="drow"><div class="n">${esc(it.name)}<span id="dk-${it.id}">${fmt(itemTot(it))} ккал · Б ${fmt((it.p * it.g) / 100)} · Ж ${fmt((it.f * it.g) / 100)} · У ${fmt((it.c * it.g) / 100)}</span></div>
+  const num = (it, key, lab, v) => `<label>${lab}<input data-ik="${key}" data-iid="${it.id}" type="number" inputmode="decimal" value="${Math.round(v * 10) / 10}"></label>`;
+  return `<div class="lbl">${s.edit ? 'Порция' : 'К добавлению'}</div><div class="draft">${s.items.map((it) => `<div class="ditem"><div class="drow"><div class="n">${esc(it.name)}<span id="dk-${it.id}">${fmt(itemTot(it))} ккал · Б ${fmt((it.p * it.g) / 100)} · Ж ${fmt((it.f * it.g) / 100)} · У ${fmt((it.c * it.g) / 100)}</span></div>
     <input data-gi="${it.id}" type="number" inputmode="decimal" value="${it.g}" aria-label="Граммы"><span class="tiny mute">г</span>
+    <button class="star ${it.open ? 'on' : ''}" data-a="iopen" data-id="${it.id}" aria-label="Править цифры">${ic('edit')}</button>
     <button class="star ${S.foods.some((f) => f.name === it.name) ? 'on' : ''}" data-a="star" data-id="${it.id}" aria-label="В мои блюда">${ic('star')}</button>
-    ${s.edit ? '' : `<button class="x" data-a="rmitem" data-id="${it.id}" aria-label="Убрать">${ic('trash')}</button>`}</div>`).join('')}</div>`;
+    ${s.edit ? '' : `<button class="x" data-a="rmitem" data-id="${it.id}" aria-label="Убрать">${ic('trash')}</button>`}</div>
+    ${it.open ? `<div class="iedit"><label>Название<input data-ik="name" data-iid="${it.id}" type="text" value="${esc(it.name)}"></label><div class="grid2">${num(it, 'kcal', 'Ккал на порцию', itemTot(it))}${num(it, 'p', 'Белки, г', (it.p * it.g) / 100)}${num(it, 'f', 'Жиры, г', (it.f * it.g) / 100)}${num(it, 'c', 'Углеводы, г', (it.c * it.g) / 100)}</div><p class="tiny mute">Цифры за всю порцию. Если изменить граммы, значения пересчитаются.</p></div>` : ''}</div>`).join('')}</div>`;
 }
 function totalLabel(s) {
   const k = s.items.reduce((a, it) => a + itemTot(it), 0), mname = (MEALS.find((m) => m[0] === s.meal) || [])[1];
@@ -1071,12 +1087,13 @@ function viewSheet() {
   const inp = (f, lab, type = 'text', extra = '') => `<label>${lab}<input data-f="${f}" type="${type}" ${type === 'number' ? 'inputmode="decimal"' : ''} value="${esc(s[f] ?? '')}" ${extra}></label>`;
   let body = '';
   if (s.type === 'add') body = viewAdd(s);
+  else if (s.type === 'reset') body = `<h2>Сбросить все данные?</h2><p class="mute">Удалятся дневник питания, тренировки, вес и отчёты профиля «${esc(PROFILES[who].name)}» на всех устройствах. Вернуть их будет нельзя.</p><button class="btn" style="background:var(--warm);color:#fff" data-a="resetdo">Да, удалить всё</button><button class="btn soft" data-a="close">Отмена</button>`;
   else if (s.type === 'ex') body = exSheet(s);
   else if (s.type === 'fridge') body = fridgeSheet(s);
   else if (s.type === 'weight') body = `<h2>Записать вес</h2>${inp('kg', 'Вес, кг', 'number')}<button class="btn" data-a="saveweight" ${n0(s.kg) > 20 ? '' : 'disabled'}>Сохранить</button><button class="btn soft" data-a="close">Отмена</button>`;
   else if (s.type === 'steps') body = `<h2>Шаги за день</h2><p class="mute small">Откройте приложение «Здоровье» на iPhone и посмотрите шаги за сегодня.</p>${inp('steps', 'Шагов', 'number')}<button class="btn" data-a="savesteps">Сохранить</button><button class="btn soft" data-a="close">Отмена</button>`;
-  else if (s.type === 'wmanual') body = `<h2>Своя тренировка</h2>${inp('name', 'Что делали')}<div class="grid2">${inp('min', 'Минут', 'number')}${inp('kcal', 'Ккал (примерно)', 'number')}</div><button class="btn" data-a="savew" ${n0(s.min) > 0 ? '' : 'disabled'}>Сохранить</button><button class="btn soft" data-a="close">Отмена</button>`;
-  else if (s.type === 'done') body = `<h2>${s.full ? 'Готово!' : 'Тренировка записана'}</h2><p>${esc(s.name)}: ${s.min} мин, примерно ${s.kcal} ккал. Запись добавлена в дневник.</p><div class="lbl">Как прошло?</div><div class="mchips">${Object.entries(FEEL).map(([k, n]) => `<button data-a="wfeel" data-id="${k}" aria-current="${s.feel === k}">${n}</button>`).join('')}<button data-a="wfeel" data-id="pain" aria-current="${s.feel === 'pain'}">Болели суставы</button></div><button class="btn" data-a="close">Готово</button>`;
+  else if (s.type === 'wmanual') body = `<h2>${s.edit ? 'Изменить тренировку' : 'Своя тренировка'}</h2>${inp('name', 'Что делали')}<div class="grid2">${inp('min', 'Минут', 'number')}${inp('kcal', 'Ккал (примерно)', 'number')}</div><button class="btn" data-a="savew" ${n0(s.min) > 0 ? '' : 'disabled'}>Сохранить</button><button class="btn soft" data-a="close">Отмена</button>`;
+  else if (s.type === 'done') body = `<h2>${s.full ? 'Готово!' : 'Тренировка записана'}</h2><p>${esc(s.name)}: ${s.min} мин, примерно ${s.kcal} ккал. Запись добавлена в дневник.</p><div class="lbl">Как прошло?</div><div class="mchips">${Object.entries(FEEL).map(([k, n]) => `<button data-a="wfeel" data-id="${k}" aria-current="${s.feel === k}">${n}</button>`).join('')}<button data-a="wfeel" data-id="pain" aria-current="${s.feel === 'pain'}">Болели суставы</button></div><button class="btn ghost" data-a="wedit" data-id="${s.wid}">Исправить минуты и ккал</button><button class="btn" data-a="close">Готово</button>`;
   else if (s.type === 'keyset') body = `<h2>Код доступа</h2><label>Код<input data-f="keyv" type="text" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(s.keyv || '')}"></label><p class="small mute">Код задаётся в Netlify (переменная ACCESS_CODES). Он нужен, чтобы чужие не тратили бесплатный лимит ИИ и не видели ваши данные. По одному коду данные хранятся в облаке и доступны с любого вашего устройства.</p><button class="btn" data-a="savekey2">Сохранить</button><button class="btn soft" data-a="close">Отмена</button>`;
   else if (s.type === 'backup') body = `<h2>Резервная копия</h2><p class="small mute">Скопируйте текст и сохраните в заметках. Чтобы восстановить данные или перенести на другой телефон, вставьте текст сюда и нажмите «Восстановить».</p>
     <textarea id="bk" data-f="blob" rows="8" spellcheck="false">${esc(s.blob)}</textarea><div class="grid2"><button class="btn ghost" data-a="copybk">Скопировать</button><button class="btn" data-a="dorestore">Восстановить</button></div><button class="btn soft" data-a="close">Закрыть</button>`;
@@ -1100,7 +1117,12 @@ const sgHtml = (sg) => `Ориентир для похудения: <b>${fmt(sg.
 function paintSuggest() { const el = document.getElementById('sg'); if (el && sheet && sheet.type === 'profile') el.innerHTML = sgHtml(suggestGoal(sheet.p, lastWeight() || n0(sheet.kg0) || 70)); }
 function paintDraft() {
   if (!sheet || !sheet.items) return;
-  sheet.items.forEach((it) => { const el = document.getElementById('dk-' + it.id); if (el) el.textContent = `${fmt(itemTot(it))} ккал · Б ${fmt((it.p * it.g) / 100)} · Ж ${fmt((it.f * it.g) / 100)} · У ${fmt((it.c * it.g) / 100)}`; });
+  const act = document.activeElement;
+  sheet.items.forEach((it) => {
+    const el = document.getElementById('dk-' + it.id); if (el) el.textContent = `${fmt(itemTot(it))} ккал · Б ${fmt((it.p * it.g) / 100)} · Ж ${fmt((it.f * it.g) / 100)} · У ${fmt((it.c * it.g) / 100)}`;
+    const tot = { kcal: itemTot(it), p: (it.p * it.g) / 100, f: (it.f * it.g) / 100, c: (it.c * it.g) / 100 };
+    Object.keys(tot).forEach((k) => { const inp = document.querySelector(`[data-ik="${k}"][data-iid="${it.id}"]`); if (inp && inp !== act) inp.value = Math.round(tot[k] * 10) / 10; });
+  });
   const b = document.getElementById('tot'); if (b) b.textContent = totalLabel(sheet);
 }
 
@@ -1123,6 +1145,7 @@ function newAdd(meal) { return { type: 'add', meal, tab: 'search', q: '', items:
 /* ---------- события ---------- */
 document.addEventListener('input', (e) => {
   const t = e.target; if (!sheet) return;
+  if (t.dataset.ik) { const it = sheet.items && sheet.items.find((x) => x.id === t.dataset.iid); if (it) { const k = t.dataset.ik; if (k === 'name') { it.name = t.value; } else { const v = Math.max(0, n0(t.value)), g = it.g || 100, f = { kcal: 'k', p: 'p', f: 'f', c: 'c' }[k]; it[f] = (v / g) * 100; } paintDraft(); } return; }
   if (t.dataset.gi) { const it = sheet.items.find((x) => x.id === t.dataset.gi); if (it) { it.g = Math.max(0, n0(t.value)); paintDraft(); } return; }
   if (t.dataset.f) {
     setPath(sheet, t.dataset.f, t.value);
@@ -1167,11 +1190,11 @@ document.addEventListener('click', (e) => {
       if (i >= 0) S.foods.splice(i, 1); else S.foods.push({ id: rnd(), name: it.name, g: it.g, k: it.k, p: it.p, c: it.c, f: it.f }); save(); render(); break; }
     case 'commit': {
       const items = s.items.filter((x) => x.g > 0); if (!items.length) break;
-      if (s.edit) { const en = S.meals.find((m) => m.id === s.edit); if (en) { en.g = items[0].g; } save(); sheet = null; say('Сохранено'); break; }
+      if (s.edit) { const en = S.meals.find((m) => m.id === s.edit); if (en) Object.assign(en, { g: items[0].g, name: (items[0].name || en.name).trim().slice(0, 80), k: items[0].k, p: items[0].p, c: items[0].c, f: items[0].f }); save(); sheet = null; say('Сохранено'); break; }
       items.forEach((it) => S.meals.push({ id: rnd(), date: day, meal: s.meal, time: day === ymd() ? hhmm() : '', name: it.name, g: it.g, k: it.k, p: it.p, c: it.c, f: it.f }));
       save(); stopScan(); sheet = null; say('Добавлено'); break; }
     case 'edit': { const en = S.meals.find((m) => m.id === id); if (!en) break;
-      sheet = Object.assign(newAdd(en.meal), { edit: en.id, items: [{ id: rnd(), name: en.name, g: en.g, k: en.k, p: en.p, c: en.c, f: en.f }], confirmDel: false }); render(); break; }
+      sheet = Object.assign(newAdd(en.meal), { edit: en.id, items: [{ id: rnd(), name: en.name, g: en.g, k: en.k, p: en.p, c: en.c, f: en.f, open: true }], confirmDel: false }); render(); break; }
     case 'delentry': if (!s.confirmDel) { s.confirmDel = true; render(); } else { S.meals = S.meals.filter((m) => m.id !== s.edit); save(); sheet = null; say('Удалено'); } break;
     case 'savekey': { const v = (s.keyv || '').trim(); if (!v) { s.err = 'Введите код.'; render(); break; } setCode(v); s.nokey = false; s.err = ''; const r = s.retry || 'text'; s.retry = null; runAI(r); syncNow(); break; }
     case 'keyset': sheet = { type: 'keyset', keyv: getCode() }; render(); break;
@@ -1186,7 +1209,9 @@ document.addEventListener('click', (e) => {
     case 'tskip': { const t = timerRun; if (t.idx >= t.ph.length - 1) finishTimer(true); else { t.idx++; t.left = t.ph[t.idx].s; render(); } break; }
     case 'tstop': finishTimer(false); break;
     case 'wmanual': sheet = { type: 'wmanual', name: '', min: '', kcal: '' }; render(); break;
-    case 'savew': { const min = Math.round(n0(s.min)); S.workouts.push({ id: rnd(), date: ymd(), name: (s.name || '').trim() || 'Тренировка', min, kcal: Math.round(n0(s.kcal)) || Math.round(2.5 * (lastWeight() || 70) * min / 60) }); save(); sheet = null; render(); break; }
+    case 'wedit': { const w = S.workouts.find((x) => x.id === id); if (w) { sheet = { type: 'wmanual', edit: w.id, name: w.name, min: w.min, kcal: w.kcal }; render(); } break; }
+    case 'savew': { const min = Math.round(n0(s.min)); if (s.edit) { const w = S.workouts.find((x) => x.id === s.edit); if (w) Object.assign(w, { name: (s.name || '').trim() || w.name, min, kcal: Math.round(n0(s.kcal)) }); save(); sheet = null; say('Сохранено'); break; }
+       S.workouts.push({ id: rnd(), date: ymd(), name: (s.name || '').trim() || 'Тренировка', min, kcal: Math.round(n0(s.kcal)) || Math.round(2.5 * (lastWeight() || 70) * min / 60) }); save(); sheet = null; render(); break; }
     case 'delw': S.workouts = S.workouts.filter((w) => w.id !== id); save(); render(); break;
     case 'profile': sheet = { type: 'profile', p: Object.assign({}, S.profile), kg0: '' }; render(); break;
     case 'usegoal': s.p.goal = n0(el.dataset.v); { const g = document.querySelector('[data-p="goal"]'); if (g) g.value = s.p.goal; } break;
@@ -1208,6 +1233,10 @@ document.addEventListener('click', (e) => {
     case 'openprog': openProg = id; walkMin = 0; loadExDb(); render(); break;
     case 'progback': openProg = null; render(); break;
     case 'wmin': walkMin = n0(id); render(); break;
+    case 'iopen': { const it = s.items.find((x) => x.id === id); if (it) { it.open = !it.open; render(); } break; }
+    case 'progtoggle': progOpen = !progOpen; render(); break;
+    case 'resetask': sheet = { type: 'reset' }; render(); break;
+    case 'resetdo': wipeAll(); day = ymd(); tab = 'diary'; sheet = { type: 'profile', p: Object.assign({}, S.profile), kg0: '', first: true }; render(); syncNow(); break;
     case 'syncnow': syncNow(); break;
     case 'addex': sheet = newEx(); render(); break;
     case 'exrep': { const e = S.exlog.find((x) => x.id === id); if (e) { sheet = newEx({ exn: e.name, sets: e.sets, reps: e.reps, kg: e.kg || '', min: e.min || '', feel: 'ok' }); render(); } break; }
