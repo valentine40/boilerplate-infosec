@@ -897,7 +897,7 @@ function viewMore() {
   <section class="card"><div class="row between"><h3 style="font-size:16px">Облако</h3><button class="small" style="color:var(--brand);font-weight:600" data-a="syncnow">Синхронизировать</button></div>
     <div id="syncline" class="sync" style="margin-top:8px"></div>
     <p class="small mute" style="margin-top:10px">Записи сохраняются на сервере отдельно для каждого профиля. Зайдите с любого устройства, выберите профиль, и дневник, вес и тренировки появятся там.</p></section>
-  <section class="card"><p class="small mute">Расчёт калорий и разборы по тексту и фото делает бесплатный ИИ (Groq) через ваш сайт, штрихкоды ищутся в Open Food Facts. Калории это оценка, а не медицинская рекомендация.</p></section>`;
+  <section class="card"><p class="small mute">Расчёт калорий и разборы по тексту и фото делает бесплатный ИИ (Google Gemini, запасной Groq) через ваш сайт, штрихкоды ищутся в Open Food Facts. Калории это оценка, а не медицинская рекомендация.</p></section>`;
 }
 function viewTimer() {
   const t = timerRun, ph = t.ph[t.idx], rest = ph.t === 'rest', nxt = t.ph[t.idx + 1], total = t.ph.reduce((a, b) => a + b.s, 0), doneS = t.ph.slice(0, t.idx).reduce((a, b) => a + b.s, 0) + (ph.s - t.left);

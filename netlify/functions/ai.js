@@ -1,5 +1,5 @@
 // Прокси к бесплатному ИИ. Ключи лежат только в переменных окружения Netlify и не попадают на телефон.
-// Нужно: GROQ_API_KEY (или GEMINI_API_KEY как запасной). Необязательно: ACCESS_CODES="код1,код2", GROQ_MODEL.
+// Нужен хотя бы один ключ: GEMINI_API_KEY (основной) и/или GROQ_API_KEY (запасной). Необязательно: ACCESS_CODES, GEMINI_MODEL, GROQ_MODEL.
 const json = (status, obj) => ({ statusCode: status, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) });
 
 function extract(text) {
@@ -27,20 +27,35 @@ async function viaGroq(text, image, max) {
   return { status: r.status, text: out };
 }
 
-async function viaGemini(text, image) {
+// Gemini: сначала обычный Google AI Studio, при отказе по ключу пробуем Vertex AI (ключи вида AQ.…).
+let gemMode = '';
+async function gemCall(mode, model, text, image, max) {
   const parts = [{ text }];
   if (image) parts.push({ inline_data: { mime_type: 'image/jpeg', data: image } });
-  let last = { status: 502 };
-  for (const m of ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite']) {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
-      body: JSON.stringify({ contents: [{ parts }], generationConfig: { temperature: 0.2, responseMimeType: 'application/json' } })
-    });
-    if (r.status === 404) { last = { status: 404 }; continue; }
-    const j = await r.json().catch(() => ({}));
-    const out = (((j.candidates || [])[0] || {}).content || { parts: [] }).parts.map((p) => p.text || '').join('');
-    return { status: r.status, text: out };
+  const key = process.env.GEMINI_API_KEY;
+  const url = mode === 'vertex'
+    ? `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:generateContent?key=${encodeURIComponent(key)}`
+    : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  const headers = { 'Content-Type': 'application/json' };
+  if (mode !== 'vertex') headers['x-goog-api-key'] = key;
+  const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0.2, maxOutputTokens: max, responseMimeType: 'application/json' } }) });
+  const j = await r.json().catch(() => ({}));
+  const out = (((j.candidates || [])[0] || {}).content || { parts: [] }).parts.map((p) => p.text || '').join('');
+  return { status: r.status, text: out };
+}
+async function viaGemini(text, image, max) {
+  const models = [process.env.GEMINI_MODEL, 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite', 'gemini-2.5-flash'].filter(Boolean);
+  let last = { status: 502 }, tries = 0;
+  for (const m of models) {
+    const modes = gemMode === 'vertex' ? ['vertex', 'studio'] : ['studio', 'vertex'];
+    for (const mode of modes) {
+      if (tries++ >= 5) return last;
+      last = await gemCall(mode, m, text, image, max);
+      if (last.status >= 200 && last.status < 300) { gemMode = mode; return last; }
+      if (last.status === 404) break;                 // такой модели нет, берём следующую
+      if (last.status === 429) return last;
+      if (![400, 401, 403].includes(last.status)) return last;
+    }
   }
   return last;
 }
@@ -62,14 +77,17 @@ exports.handler = async (event) => {
   if (!text) return json(400, { error: 'bad_request' });
   if (image.length > 4 * 1024 * 1024) return json(413, { error: 'too_big' });
 
-  let res;
-  try { res = process.env.GROQ_API_KEY ? await viaGroq(text, image, max) : await viaGemini(text, image); }
-  catch { return json(502, { error: 'upstream' }); }
-
+  const order = [];
+  if (process.env.GEMINI_API_KEY) order.push(viaGemini);
+  if (process.env.GROQ_API_KEY) order.push(viaGroq);
+  let res = { status: 502 }, data = null;
+  for (const fn of order) {
+    try { res = await fn(text, image, max); } catch { res = { status: 502 }; }
+    if (res.status >= 200 && res.status < 300) { data = extract(res.text); if (data) break; res = { status: 502, parse: true }; }
+  }
+  if (data) return json(200, data);
+  if (res.parse) return json(502, { error: 'parse' });
   if (res.status === 429) return json(429, { error: 'rate' });
-  if (res.status === 401 || res.status === 403) return json(500, { error: 'setup' });
-  if (res.status < 200 || res.status >= 300) return json(502, { error: 'upstream' });
-  const data = extract(res.text);
-  if (!data) return json(502, { error: 'parse' });
-  return json(200, data);
+  if ([400, 401, 403].includes(res.status)) return json(500, { error: 'setup' });
+  return json(502, { error: 'upstream' });
 };
