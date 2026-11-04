@@ -5,6 +5,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Худеем"><meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#17A673">
+<script>try{var t=localStorage.getItem("hudeem-theme")||"light";if(t!=="auto")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 <link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png"><link rel="icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Unbounded:wght@600&display=swap">
@@ -192,7 +193,7 @@ textarea{resize:vertical;font-size:13px}
 .dots{display:inline-flex;gap:3px;vertical-align:middle;margin-left:4px} .dots i{width:7px;height:7px;border-radius:50%;background:var(--line)} .dots i.on{background:var(--brand)}
 .chip.rec{background:var(--brand);color:var(--brand-ink)}
 .chip.mute{background:var(--soft2);color:var(--mute)}
-.subtabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--soft2);border-radius:14px;padding:4px}
+.subtabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:var(--soft2);border-radius:14px;padding:4px}
 .subtabs button{padding:9px 0;border-radius:11px;font-size:14px;font-weight:600;color:var(--mute)}
 .subtabs button[aria-current="true"]{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .pager{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -212,6 +213,9 @@ textarea{resize:vertical;font-size:13px}
 .ai .tipbox{margin-top:12px;padding:11px 12px;border-radius:14px;background:var(--card);border:1px solid var(--line);font-size:14px}
 .sync{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mute)} .sync i{width:8px;height:8px;border-radius:50%;background:var(--mute)} .sync.ok i{background:var(--brand)} .sync.err i{background:var(--warm)}
 .safety{border-left:4px solid var(--c)}
+/* переключатели, чекбоксы */
+.tog{width:46px;height:28px;border-radius:99px;background:var(--line);position:relative;flex:none;transition:background .2s} .tog i{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .2s} .tog.on{background:var(--brand)} .tog.on i{transform:translateX(18px)}
+.cb{width:22px;height:22px;border-radius:7px;border:2px solid var(--line);flex:none;display:grid;place-items:center} .cb.on{background:var(--brand);border-color:var(--brand)} .cb.on:after{content:"";width:6px;height:11px;border:solid var(--brand-ink);border-width:0 2.5px 2.5px 0;transform:rotate(45deg) translate(-1px,-1px)}
 /* страница программы и картинки упражнений */
 .ditem+.ditem{border-top:1px solid var(--line)} .iedit{padding:2px 0 12px;display:flex;flex-direction:column;gap:10px} .iedit input{background:var(--card)}
 .chev{display:grid;transition:transform .2s} .chev.open{transform:rotate(90deg)}
@@ -292,7 +296,7 @@ const MEALS = [['breakfast', 'Завтрак', 'sun'], ['lunch', 'Обед', 'bo
 const mealByHour = () => { const h = new Date().getHours(); return h < 11 ? 'breakfast' : h < 16 ? 'lunch' : h < 21 ? 'dinner' : 'snack'; };
 const blank = () => ({
   profile: { name: PROFILES[who].name, sex: 'f', age: 40, height: 165, activity: 1.375, goal: 1800, weightGoal: 0, start: '', goalType: 'lose', pace: 'mid', mp: 0, mf: 0, mc: 0 },
-  meals: [], foods: [], workouts: [], weights: [], days: {}, reports: {}, exlog: [], fridge: '', plan: null, updated: 0, onboarded: false
+  meals: [], foods: [], workouts: [], weights: [], days: {}, reports: {}, exlog: [], fridge: '', plan: null, shop: null, updated: 0, onboarded: false
 });
 function normalize(o) {
   const b = blank(), s = Object.assign(b, o || {});
@@ -399,7 +403,7 @@ function mergeStates(a, b) {
   const names = new Set(out.foods.map((f) => f.name)); (older.foods || []).forEach((f) => { if (!names.has(f.name)) out.foods.push(f); });
   const wd = new Set(out.weights.map((w) => w.date)); (older.weights || []).forEach((w) => { if (!wd.has(w.date)) out.weights.push(w); });
   out.weights.sort((x, y) => x.date.localeCompare(y.date));
-  Object.keys(older.days || {}).forEach((d) => { if (!out.days[d]) out.days[d] = older.days[d]; });
+  Object.keys(older.days || {}).forEach((d) => { if (!out.days[d]) out.days[d] = older.days[d]; else { const st = Math.max(n0(out.days[d].steps), n0(older.days[d].steps)); out.days[d] = Object.assign({}, older.days[d], out.days[d]); if (st) out.days[d].steps = st; } });
   Object.keys(older.reports || {}).forEach((k) => { if (!out.reports[k]) out.reports[k] = older.reports[k]; });
   if (!out.profile.start && older.profile && older.profile.start) out.profile.start = older.profile.start;
   out.onboarded = !!(a.onboarded || b.onboarded); out.updated = Math.max(a.updated || 0, b.updated || 0);
@@ -436,7 +440,7 @@ async function syncNow() {
       if (p.status === 409 && p.j && p.j.data) { S = mergeStates(S, normalize(p.j.data)); S.updated = Date.now(); sy.base = p.j.updated; persist(); changed = true; continue; }
       throw { msg: p.status === 413 ? 'Данных слишком много для облака.' : 'Не удалось сохранить на сервере. Попробуем позже.' };
     }
-    sy.state = 'ok'; sy.at = Date.now(); saveSy();
+    sy.state = 'ok'; sy.at = Date.now(); saveSy(); setTimeout(pullSteps, 300);
   } catch (e) { sy.state = 'err'; sy.msg = (e && e.msg) || 'Нет связи. Данные сохранены на телефоне и отправятся позже.'; saveSy(); }
   syBusy = false;
   if (sheet && sheet.first && S.onboarded) { sheet = null; changed = true; }
@@ -494,7 +498,9 @@ async function shrink(file) {
 }
 $('#file').addEventListener('change', async (e) => {
   const f = e.target.files && e.target.files[0]; e.target.value = '';
-  if (!f || !sheet || sheet.type !== 'add') return;
+  if (!f || !sheet) return;
+  if (sheet.type === 'fridge') { fridgePhoto(f); return; }
+  if (sheet.type !== 'add') return;
   try { const blob = await shrink(f); sheet.photo = { blob, url: URL.createObjectURL(blob), hint: '' }; sheet.tab = 'photo'; render(); runAI('photo'); }
   catch { say('Не удалось открыть фото'); }
 });
@@ -823,7 +829,7 @@ function weekChart(days = [...Array(7)].map((_, i) => addDays(ymd(), i - 6))) {
 function viewOverview() {
   const first = S.weights[0], cur = lastWeight(), g = S.profile.weightGoal, diff = first ? cur - first.kg : 0;
   const logged = [...Array(7)].map((_, i) => sumOf(addDays(ymd(), -i)).kcal).filter((k) => k > 0), avg = logged.length ? logged.reduce((a, b) => a + b, 0) / logged.length : 0;
-  return `
+  return `${normCard()}
   <section class="card">
     <div class="row between" style="align-items:flex-end"><div><div class="small mute">Сейчас</div><div class="big-num">${cur ? r1(cur) : '—'}<span class="mute small"> кг</span></div></div>
     <div style="text-align:right"><div class="small mute">${first ? 'С начала' : ''}</div><div style="font-weight:700;font-size:18px;color:${diff <= 0 ? 'var(--brand)' : 'var(--warm)'}">${first ? (diff > 0 ? '+' : '') + r1(diff) + ' кг' : ''}</div>${g && cur ? `<div class="small mute">до цели ${r1(Math.abs(cur - g))} кг</div>` : ''}</div></div>
@@ -922,6 +928,7 @@ function fridgeSheet(s) {
   <label>Продукты через запятую<textarea data-f="fridge" rows="3" placeholder="Курица, гречка, яйца, творог, огурцы, помидоры, яблоки">${esc(s.fridge)}</textarea></label>
   <label>Что не ем или аллергия (по желанию)<input data-f="avoid" type="text" value="${esc(s.avoid)}" placeholder="Например: рыба, орехи"></label>
   <div class="mchips"><button data-a="fmode" data-id="rest" aria-current="${s.mode === 'rest'}">Остаток дня</button><button data-a="fmode" data-id="full" aria-current="${s.mode === 'full'}">Весь день</button></div>
+  <button class="btn soft" data-a="fshoot" ${s.busy ? 'disabled' : ''}>${ic('cam')} Сфотографировать холодильник</button>${s.note ? `<div class="ok">${esc(s.note)}</div>` : ''}
   <button class="btn" data-a="doplan" ${s.busy ? 'disabled' : ''}>${pl ? 'Составить заново' : 'Составить план питания'}</button>
   ${s.busy ? '<div class="row"><div class="spin"></div><span class="mute">Составляю план, это займёт до минуты…</span></div>' : ''}${s.err ? `<div class="note">${esc(s.err)}</div>` : ''}
   ${pl && !s.busy ? `<div class="lbl">План на сегодня</div>${pl.summary ? `<p class="small">${esc(pl.summary)}</p>` : ''}<p class="small mute">Всего ${fmt(total)} ккал при бюджете ${fmt(pl.budget)}.${total < pl.budget * 0.85 ? ' Часть бюджета осталась свободной: добавьте перекус по желанию.' : ''}</p>
@@ -930,7 +937,201 @@ function fridgeSheet(s) {
       <button class="btn soft" style="margin-top:10px;min-height:42px" data-a="planadd" data-i="${i}">Добавить в дневник</button></div>`).join('')}
     ${pl.buy.length ? `<div class="ok">Не хватает: ${pl.buy.map(esc).join(', ')}</div>` : ''}${pl.note ? `<p class="tiny mute">${esc(pl.note)}</p>` : ''}
     <button class="btn" data-a="planadd" data-i="all">Добавить весь план в дневник</button>` : ''}
+  <button class="btn soft" data-a="shop">Список покупок на неделю</button>
   <button class="btn soft" data-a="close">Закрыть</button>`;
+}
+
+/* ---------- тема ---------- */
+const THEMES = { light: 'Светлая', dark: 'Тёмная', auto: 'Как в телефоне' };
+let theme = lget('hudeem-theme'); if (!THEMES[theme]) theme = 'light';
+function applyTheme() {
+  const r = document.documentElement; if (theme === 'auto') r.removeAttribute('data-theme'); else r.setAttribute('data-theme', theme);
+  const dark = theme === 'dark' || (theme === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme:dark)').matches), m = document.querySelector('meta[name=theme-color]'); if (m) m.content = dark ? '#0E131A' : '#17A673';
+}
+applyTheme();
+
+/* ---------- автокоррекция нормы ---------- */
+function normData() {
+  const today = ymd(), ws = S.weights.filter((w) => w.date >= addDays(today, -20)), logged = [...Array(14)].map((_, i) => addDays(today, -i)).filter((d) => mealsOf(d).length);
+  let slope = null;
+  if (ws.length >= 3) {
+    const t0 = new Date(ws[0].date + 'T12:00:00'), xs = ws.map((w) => (new Date(w.date + 'T12:00:00') - t0) / 864e5), ys = ws.map((w) => w.kg), n = ws.length, mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
+    const den = xs.reduce((a, x) => a + (x - mx) ** 2, 0); if (xs[n - 1] >= 7 && den > 0) slope = (xs.reduce((a, x, i) => a + (x - mx) * (ys[i] - my), 0) / den) * 7;
+  }
+  const kc = logged.map((d) => sumOf(d).kcal);
+  return { weighIns: ws.length, logged: logged.length, slope, avg: kc.length ? kc.reduce((a, b) => a + b, 0) / kc.length : 0, kg: lastWeight() };
+}
+function normAdvice() {
+  const d = normData(), p = S.profile, kg = d.kg, gt = p.goalType || 'lose', floor = p.sex === 'm' ? 1500 : 1200, plan = calcPlan(p, kg), cap = plan ? plan.tdee * 1.3 : 4000;
+  const need = [];
+  if (d.weighIns < 3) need.push(`взвешиваний ещё нужно ${3 - d.weighIns} (за 3 недели)`); else if (d.slope === null) need.push('взвешивания должны охватывать хотя бы неделю');
+  if (d.logged < 8) need.push(`дней с записями еды ${d.logged} из 14, нужно хотя бы 8`);
+  if (need.length) return { status: 'need', d, text: 'Для проверки пока мало данных: ' + need.join('; ') + '.' };
+  const s = d.slope, rate = Math.abs(s) / kg; let delta = 0, why = '';
+  if (gt === 'lose') { if (s > -0.1) { delta = -150; why = 'Вес почти не снижается, хотя записи есть. Можно немного уменьшить норму.'; } else if (rate > 0.01) { delta = 150; why = 'Вес падает быстрее 1% в неделю. Это много, лучше добавить еды.'; } else why = 'Вес снижается в хорошем темпе. Норму менять не нужно.'; }
+  else if (gt === 'keep') { if (s > 0.25) { delta = -150; why = 'Вес растёт, а цель держать его. Немного уменьшите норму.'; } else if (s < -0.25) { delta = 150; why = 'Вес снижается, а цель держать его. Немного добавьте.'; } else why = 'Вес стабилен. Норма подходит.'; }
+  else { if (s < 0.1) { delta = 150; why = 'Вес не растёт. Добавьте немного калорий.'; } else if (s > 0.5) { delta = -150; why = 'Набор слишком быстрый, лучше убавить.'; } else why = 'Набор идёт в хорошем темпе.'; }
+  const kcal = Math.round(Math.min(cap, Math.max(floor, p.goal + delta)) / 10) * 10;
+  return { status: kcal !== p.goal ? 'adjust' : 'ok', d, kcal, text: why };
+}
+const PROMPT_NORMCHECK = (o) => `Ты диетолог в приложении для похудения. Проверь, подходит ли человеку текущая норма калорий, по реальным данным. Данные: ${JSON.stringify(o)}
+Правила: меняй норму не больше чем на 250 ккал за раз; не ниже min_kcal; при похудении не быстрее 1% веса в неделю; учти, что вес колеблется и записи еды приблизительны; не ставь диагнозов; если данных мало или записи неполные, лучше не менять норму и скажи об этом. local_advice это простое правило, можешь согласиться или поправить.
+Ответь ТОЛЬКО одним JSON без markdown: {"kcal":новая норма числом,"explanation":"2-3 предложения по-русски почему"}`;
+let normBusy = false, normErr = '';
+async function runNormCheck() {
+  const a = normAdvice(), p = S.profile; normBusy = true; normErr = ''; render();
+  try {
+    const o = { sex: p.sex === 'm' ? 'м' : 'ж', age: p.age, goal_type: p.goalType, current_kcal: p.goal, min_kcal: p.sex === 'm' ? 1500 : 1200, weight_kg: a.d.kg, weight_trend_kg_per_week: a.d.slope === null ? null : Math.round(a.d.slope * 100) / 100, weigh_ins_3w: a.d.weighIns, days_logged_of_14: a.d.logged, avg_logged_kcal: Math.round(a.d.avg), local_advice: a.status === 'need' ? 'мало данных' : a.kcal };
+    const r = await askAI(null, PROMPT_NORMCHECK(o), 700), kc = Math.round(n0(r.kcal) / 10) * 10, plan = calcPlan(p, a.d.kg);
+    if (!(kc >= o.min_kcal && Math.abs(kc - p.goal) <= 250 && (!plan || kc <= plan.tdee * 1.3))) throw { code: 'parse' };
+    S.reports.norm = { at: Date.now(), kcal: kc, explanation: String(r.explanation || '').slice(0, 400), forGoal: p.goal }; save();
+  } catch (e) { normErr = aiError(e, {}); }
+  normBusy = false; render();
+}
+function normCard() {
+  const a = normAdvice(), rep = S.reports.norm && S.reports.norm.forGoal === S.profile.goal ? S.reports.norm : null, cur = S.profile.goal, d = a.d;
+  const data = d.slope !== null ? `Вес за 2-3 недели: ${d.slope > 0 ? '+' : ''}${r1(d.slope)} кг в неделю. Средний приём ${fmt(d.avg)} ккал при норме ${fmt(cur)}.` : '';
+  const kc = rep ? rep.kcal : a.status === 'adjust' ? a.kcal : 0;
+  return `<section class="card ai"><h3>${ic('spark')} Проверка нормы</h3><p class="sum small">${esc(a.text)}</p>${data ? `<p class="small mute">${data}</p>` : ''}
+    ${rep ? `<div class="tipbox"><b>ИИ:</b> ${esc(rep.explanation)}${rep.kcal !== cur ? ` Предлагает ${fmt(rep.kcal)} ккал.` : ' Норму менять не нужно.'}</div>` : ''}
+    ${normBusy ? '<div class="row" style="margin-top:12px"><div class="spin"></div><span class="mute">Анализирую…</span></div>' : ''}${normErr ? `<div class="note" style="margin-top:12px">${esc(normErr)}</div>` : ''}
+    ${kc && kc !== cur ? `<button class="btn" style="margin-top:12px" data-a="normapply" data-v="${kc}">Применить ${fmt(kc)} ккал в день</button>` : ''}
+    ${a.status !== 'need' ? `<button class="btn ghost" style="margin-top:10px" data-a="normai" ${normBusy ? 'disabled' : ''}>${rep ? 'Спросить ИИ ещё раз' : 'Проверить с помощью ИИ'}</button>` : ''}</section>`;
+}
+
+/* ---------- вместе: сводка второго профиля ---------- */
+let peer = null, peerBusy = false, peerErr = '';
+const otherKey = () => (who === 'v' ? 't' : 'v');
+const CHEERS = ['Молодец!', 'Так держать!', 'Горжусь тобой', 'Погнали гулять?', 'Ты справишься'];
+async function loadPeer(silent) {
+  if (peerBusy || !getCode()) return; peerBusy = true; if (!silent) { peerErr = ''; render(); }
+  try {
+    const r = await fetch(`/.netlify/functions/peer?with=${encodeURIComponent(PROFILES[otherKey()].code)}&today=${ymd()}`, { headers: { 'x-access-code': getCode() } }), j = await r.json().catch(() => null);
+    if (!r.ok || !j) throw 0; peer = j;
+    const seen = +(lget('hudeem-cheer-seen:' + who) || 0), fresh = (j.cheers || []).filter((c) => c.at > seen);
+    if (silent && fresh.length) { const c = fresh[fresh.length - 1]; say(`${c.from || 'Сообщение'}: ${c.text}`); }
+    if (!silent) lset('hudeem-cheer-seen:' + who, String(Date.now()));
+  } catch { if (!silent) peerErr = 'Не получилось загрузить. Проверьте интернет.'; }
+  peerBusy = false; if (!silent || (tab === 'progress' && ptab === 'tog' && !sheet)) render();
+}
+async function sendCheer(text) {
+  try { const r = await fetch('/.netlify/functions/peer', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-access-code': getCode() }, body: JSON.stringify({ to: PROFILES[otherKey()].code, text, from: PROFILES[who].name }) }); say(r.ok ? 'Отправлено' : 'Не отправилось'); } catch { say('Нет связи'); }
+}
+function viewTogether() {
+  const o = PROFILES[otherKey()], pr = peer && peer.peer, top = `<div class="row"><div class="pico" style="width:52px;height:52px;font:700 22px var(--f-body)">${esc(o.name[0])}</div><div class="grow"><b style="font-size:19px">${esc(o.name)}</b><div class="small mute">Неделя вместе</div></div><button class="small" style="color:var(--brand);font-weight:600" data-a="peerreload">Обновить</button></div>`;
+  if (!peer) return `<section class="card">${top}${peerErr ? `<div class="note" style="margin-top:12px">${esc(peerErr)}</div>` : '<div class="row" style="margin-top:14px"><div class="spin"></div><span class="mute">Загружаю…</span></div>'}</section>`;
+  const cheers = (peer.cheers || []).slice(-5).reverse();
+  const send = `<section class="card"><h3 style="font-size:16px;margin-bottom:10px">Поддержать ${esc(o.name)}</h3><div class="mchips">${CHEERS.map((c, i) => `<button data-a="cheer" data-i="${i}">${esc(c)}</button>`).join('')}</div></section>`;
+  const inbox = cheers.length ? `<section class="card"><h3 style="font-size:16px;margin-bottom:6px">Вам написали</h3>${cheers.map((c) => `<div class="row between small" style="padding:7px 0;border-top:1px solid var(--line)"><span><b>${esc(c.from || '')}</b> ${esc(c.text)}</span><span class="mute tiny">${new Date(c.at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</span></div>`).join('')}</section>` : '';
+  if (!pr || pr.empty) return `<section class="card">${top}<p class="mute" style="margin-top:12px">${esc(o.name)} ещё не вносит данные в приложение. Когда начнёт, здесь появится неделя.</p></section>${send}${inbox}`;
+  const dots = pr.perDay.map((x) => `<span style="flex:1;text-align:center"><i style="display:block;height:34px;border-radius:9px;background:${x.logged ? 'var(--brand)' : 'var(--soft2)'}"></i><span class="tiny mute">${new Date(x.d + 'T12:00:00').toLocaleDateString('ru-RU', { weekday: 'short' })}</span></span>`).join('');
+  const wc = pr.weightChange4w !== null ? pr.weightChange4w : pr.weightChangeTotal;
+  return `<section class="card">${top}<div class="row" style="gap:6px;margin-top:14px;align-items:flex-end">${dots}</div></section>
+  <div class="tiles">${tile('Дней с записями', pr.daysLogged, 'из 7', pr.streak ? `серия ${pr.streak}` : '', pr.daysLogged >= 5 ? 'good' : '')}${tile('В среднем в день', pr.avgKcal ? fmt(pr.avgKcal) : '—', 'ккал', pr.goal ? `норма ${fmt(pr.goal)}` : '')}
+  ${tile('Тренировки', pr.workoutMin, 'мин', `${pr.workouts} за неделю`, pr.workoutMin >= 100 ? 'good' : '')}${tile('Вес', wc === null ? '—' : (wc > 0 ? '+' : '') + r1(wc), 'кг', wc === null ? '' : pr.weightChange4w !== null ? 'за 4 недели' : 'с начала', wc !== null && wc < 0 ? 'good' : '')}</div>${send}${inbox}`;
+}
+
+/* ---------- шаги из «Здоровья» ---------- */
+async function pullSteps() {
+  if (!getCode()) return;
+  try {
+    const r = await fetch('/.netlify/functions/steps', { headers: { 'x-access-code': getCode() } }); if (!r.ok) return; const j = await r.json(); let ch = false;
+    Object.entries(j.days || {}).forEach(([d, n]) => { const cur = (S.days[d] && S.days[d].steps) || 0; if (n > 0 && n !== cur) { S.days[d] = Object.assign({}, S.days[d], { steps: n }); ch = true; } });
+    if (ch) { save(); if (!sheet && !timerRun) render(); }
+  } catch {}
+}
+const stepsUrl = () => `${location.origin}/.netlify/functions/steps?code=${encodeURIComponent(getCode())}&steps=`;
+const healthSheet = () => `<h2>Шаги из «Здоровья»</h2><p class="small mute">Раз в день iPhone сам отправит число шагов, и оно появится в дневнике. Настроить нужно один раз, примерно две минуты.</p>
+  <div class="lbl">1. Создайте команду</div><ol class="small" style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px"><li>Откройте приложение «Команды», нажмите «+».</li><li>Добавьте действие «Найти образцы Здоровья»: тип «Шаги», начало «Сегодня».</li><li>Добавьте «Вычислить статистику»: «Сумма».</li><li>Добавьте «Получить содержимое URL». В адресе вставьте ссылку ниже, а сразу после «steps=» вставьте результат из прошлого шага.</li></ol>
+  <label>Ссылка<input id="surl" type="text" readonly value="${esc(stepsUrl())}"></label><button class="btn soft" data-a="copysteps">Скопировать ссылку</button>
+  <div class="lbl">2. Запускайте автоматически</div><p class="small">«Автоматизация» → «+» → «Время суток», например 21:00, каждый день → «Запустить команду» → выберите вашу. Отключите «Спрашивать перед запуском».</p>
+  <p class="tiny mute">Ссылка содержит ваш код доступа, не отправляйте её другим.</p><button class="btn" data-a="pullsteps">Подтянуть шаги сейчас</button><button class="btn soft" data-a="close">Закрыть</button>`;
+
+/* ---------- напоминания (push) ---------- */
+const VAPID_PUB = 'BJvfwpPQHtGpnE95evf2fD2hA3mglcMaZJwCwUO1ZvJgN7juyw0QuDKm4nTWNTKrIh2EsKGL4JEjEpe7XTwBxkk';
+const urlB64 = (b) => { const raw = atob((b + '='.repeat((4 - (b.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(raw, (c) => c.charCodeAt(0)); };
+const isStandalone = () => window.navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+const pushOk = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+async function pushApi(method, body) { const r = await fetch('/.netlify/functions/push', { method, headers: { 'Content-Type': 'application/json', 'x-access-code': getCode() }, body: body ? JSON.stringify(body) : undefined }); return { status: r.status, j: await r.json().catch(() => null) }; }
+async function openRemind() {
+  const s = sheet = { type: 'remind', set: null, busy: true, msg: '', err: '', subs: 0, ready: true }; render();
+  try { const g = await pushApi('GET'); if (g.status === 200 && g.j) { s.set = g.j.settings; s.subs = g.j.subs; s.ready = g.j.ready; } else s.err = 'Сервер не ответил.'; } catch { s.err = 'Нет связи.'; }
+  if (s.set) s.set.tz = (Intl.DateTimeFormat().resolvedOptions().timeZone) || s.set.tz;
+  try { s.here = pushOk() && (await (await navigator.serviceWorker.ready).pushManager.getSubscription()) ? true : false; } catch { s.here = false; }
+  s.busy = false; if (sheet === s) render();
+}
+async function savePush(enable) {
+  const s = sheet; s.busy = true; s.err = ''; s.msg = ''; render();
+  try {
+    let subscription = null;
+    if (enable) {
+      if (!pushOk()) throw { msg: 'Этот браузер не поддерживает уведомления. На iPhone откройте приложение с экрана «Домой».' };
+      const perm = await Notification.requestPermission(); if (perm !== 'granted') throw { msg: 'Уведомления запрещены. Разрешите их в настройках iPhone для этого приложения.' };
+      const reg = await navigator.serviceWorker.ready; let sub = await reg.pushManager.getSubscription(); if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64(VAPID_PUB) });
+      subscription = sub.toJSON();
+    }
+    const p = await pushApi('PUT', { subscription, settings: s.set });
+    if (p.status !== 200) throw { msg: 'Не удалось сохранить на сервере.' };
+    s.subs = p.j.subs; s.here = enable ? true : s.here; s.msg = enable ? 'Напоминания включены на этом телефоне.' : 'Настройки сохранены.';
+  } catch (e) { s.err = (e && e.msg) || 'Не получилось включить напоминания.'; }
+  s.busy = false; if (sheet === s) render();
+}
+async function offPush() {
+  const s = sheet; s.busy = true; render();
+  try { const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription(); if (sub) { await pushApi('DELETE', { endpoint: sub.endpoint }); await sub.unsubscribe(); } s.here = false; s.msg = 'Напоминания выключены на этом телефоне.'; } catch { s.err = 'Не получилось выключить.'; }
+  s.busy = false; if (sheet === s) render();
+}
+async function testPush() {
+  const s = sheet; s.busy = true; s.err = ''; s.msg = ''; render();
+  try { const p = await pushApi('POST', { test: true }); s.msg = p.status === 200 && p.j && p.j.ok ? 'Отправлено. Уведомление придёт через пару секунд.' : p.status === 500 ? 'Серверу не хватает настройки VAPID.' : 'Сначала включите напоминания на этом телефоне.'; } catch { s.err = 'Нет связи.'; }
+  s.busy = false; if (sheet === s) render();
+}
+function remindSheet(s) {
+  const st = s.set; if (!st) return `<h2>Напоминания</h2>${s.busy ? '<div class="row"><div class="spin"></div><span class="mute">Загружаю…</span></div>' : ''}${s.err ? `<div class="note">${esc(s.err)}</div>` : ''}<button class="btn soft" data-a="close">Закрыть</button>`;
+  const sw = (k, lab, sub) => `<button class="mrow" style="padding:12px 0" data-a="rtog" data-id="${k}"><span style="flex:1;color:var(--ink);font-size:15px"><b>${lab}</b><br><span>${sub}</span></span><span class="tog ${st[k] ? 'on' : ''}"><i></i></span></button>`;
+  const dn = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+  const need = pushOk() ? '' : '<div class="note">Уведомления работают, когда приложение добавлено на экран «Домой»: «Поделиться» → «На экран Домой», затем откройте его оттуда.</div>';
+  return `<h2>Напоминания</h2>${need}${!s.ready ? '<div class="note">Сервер ещё не настроен для уведомлений.</div>' : ''}
+  <div class="menu" style="padding:0">${sw('water', 'Вода', 'в 11:00, 15:00 и 19:00, если выпито меньше 8 стаканов')}${sw('meals', 'Записать еду', 'в 10:30, 14:30 и 20:00, если приём ещё не записан')}${sw('weigh', 'Взвешивание', 'по понедельникам в 8:00')}${sw('workout', 'Тренировка', 'если сегодня ещё не занимались')}</div>
+  ${st.workout ? `<label>Время тренировки<input data-f="set.workoutTime" type="time" value="${esc(st.workoutTime)}"></label><div class="lbl">Дни</div><div class="mchips">${[1, 2, 3, 4, 5, 6, 0].map((d) => `<button data-a="rday" data-id="${d}" aria-current="${st.workoutDays.includes(d)}">${dn[d]}</button>`).join('')}</div>` : ''}
+  <p class="small mute">Часовой пояс: ${esc(st.tz)}. На этом телефоне: ${s.here ? 'включены' : 'выключены'}.</p>
+  ${s.busy ? '<div class="row"><div class="spin"></div><span class="mute">Секунду…</span></div>' : ''}${s.err ? `<div class="note">${esc(s.err)}</div>` : ''}${s.msg ? `<div class="ok">${esc(s.msg)}</div>` : ''}
+  <button class="btn" data-a="remindon" ${s.busy ? 'disabled' : ''}>${s.here ? 'Сохранить настройки' : 'Включить на этом телефоне'}</button>
+  ${s.here ? `<div class="grid2"><button class="btn ghost" data-a="remindtest" ${s.busy ? 'disabled' : ''}>Проверить</button><button class="btn ghost" data-a="remindoff" ${s.busy ? 'disabled' : ''}>Выключить</button></div>` : ''}<button class="btn soft" data-a="close">Закрыть</button>`;
+}
+
+/* ---------- фото холодильника и список покупок ---------- */
+const PROMPT_FRIDGE = 'Перечисли съедобные продукты, которые видны на фото (холодильник, полки, стол). Названия по-русски, коротко, без брендов, без повторов; для упаковок называй содержимое (например, «молоко», «йогурт»). Ответь ТОЛЬКО одним JSON без markdown: {"products":["продукт","продукт"]}';
+async function fridgePhoto(f) {
+  const s = sheet; s.busy = true; s.err = ''; s.note = ''; render();
+  try {
+    const blob = await shrink(f), r = await askAI(blob, PROMPT_FRIDGE, 800), arr = (Array.isArray(r.products) ? r.products : []).map((x) => String(x).trim()).filter(Boolean).slice(0, 40);
+    if (!arr.length) throw { code: 'parse' };
+    const have = new Set((s.fridge || '').toLowerCase().split(/[,;\n]+/).map((x) => x.trim())), add = arr.filter((x) => !have.has(x.toLowerCase()));
+    s.fridge = ((s.fridge || '').trim() ? (s.fridge || '').trim().replace(/[,\s]+$/, '') + ', ' : '') + add.join(', '); s.note = `Распознано продуктов: ${arr.length}. Проверьте список и поправьте.`;
+  } catch (e) { s.err = e && e.code === 'parse' ? 'Не нашёл продукты на фото. Снимите ближе и при хорошем свете.' : aiError(e, {}); }
+  if (sheet === s) { s.busy = false; render(); }
+}
+const PROMPT_SHOP = (o) => `Ты помощник по питанию. Составь список покупок на 7 дней для одного человека под его цель. Данные: ${JSON.stringify(o)}
+Правила: учитывай норму калорий и белка; не включай то, что уже есть дома (have); учитывай avoid; продукты простые и недорогие, весь список не больше 28 позиций; количество укажи в qty (например «1 кг», «10 шт»).
+Ответь ТОЛЬКО одним JSON без markdown: {"categories":[{"name":"Овощи и фрукты","items":[{"name":"Помидоры","qty":"1 кг"}]}]}`;
+async function runShop(s) {
+  s.busy = true; s.err = ''; render(); const mg = macroGoals();
+  try {
+    const r = await askAI(null, PROMPT_SHOP({ profile: profLine(), kcal_goal: S.profile.goal, protein_g: Math.round(mg.p), have: (S.fridge || '').slice(0, 600), avoid: s.avoid || '' }), 2200), items = [];
+    (Array.isArray(r.categories) ? r.categories : []).slice(0, 8).forEach((c) => (Array.isArray(c.items) ? c.items : []).slice(0, 12).forEach((it) => { if (it && it.name) items.push({ id: rnd(), cat: String(c.name || 'Разное').slice(0, 40), name: String(it.name).slice(0, 60), qty: String(it.qty || '').slice(0, 24), done: false }); }));
+    if (!items.length) throw { code: 'parse' };
+    S.shop = { at: Date.now(), items: items.slice(0, 40) }; save();
+  } catch (e) { s.err = aiError(e, {}); }
+  if (sheet === s) { s.busy = false; render(); }
+}
+function shopSheet(s) {
+  const sh = S.shop, items = (sh && sh.items) || [], cats = [...new Set(items.map((i) => i.cat))], left = items.filter((i) => !i.done).length;
+  return `<h2>Список покупок</h2>${items.length ? `<p class="small mute">Осталось купить: ${left} из ${items.length}. Нажмите на позицию, чтобы отметить.</p>` : '<p class="small mute">ИИ составит список на неделю под вашу норму калорий и белка, с учётом того, что уже есть в холодильнике.</p>'}
+  ${cats.map((c) => `<div class="lbl">${esc(c)}</div>${items.filter((i) => i.cat === c).map((i) => `<button class="pick" data-a="shopt" data-id="${i.id}"><span class="cb ${i.done ? 'on' : ''}"></span><span class="n" style="${i.done ? 'text-decoration:line-through;opacity:.55' : ''}">${esc(i.name)}<span>${esc(i.qty)}</span></span></button>`).join('')}`).join('')}
+  <label>Что не ем (по желанию)<input data-f="avoid" type="text" value="${esc(s.avoid || '')}" placeholder="Например: рыба, орехи"></label>
+  ${s.busy ? '<div class="row"><div class="spin"></div><span class="mute">Составляю список, до минуты…</span></div>' : ''}${s.err ? `<div class="note">${esc(s.err)}</div>` : ''}
+  <button class="btn" data-a="shopgen" ${s.busy ? 'disabled' : ''}>${items.length ? 'Составить заново' : 'Составить список на неделю'}</button>${items.some((i) => i.done) ? '<button class="btn ghost" data-a="shopclear">Убрать отмеченные</button>' : ''}<button class="btn soft" data-a="close">Закрыть</button>`;
 }
 
 /* ---------- отчёты: день и неделя ---------- */
@@ -1036,8 +1237,8 @@ function reportWeek() {
 }
 function viewProgress() {
   if (!rweek) rweek = monOf(ymd());
-  const sub = `<div class="subtabs">${[['over', 'Обзор'], ['day', 'День'], ['week', 'Неделя']].map(([k, n]) => `<button data-a="ptab" data-id="${k}" aria-current="${ptab === k}">${n}</button>`).join('')}</div>`;
-  return `<div class="head"><div><div class="date">Вес, питание, отчёты</div><h1>Прогресс</h1></div></div>${sub}${ptab === 'day' ? reportDay() : ptab === 'week' ? reportWeek() : viewOverview()}`;
+  const sub = `<div class="subtabs">${[['over', 'Обзор'], ['day', 'День'], ['week', 'Неделя'], ['tog', 'Вместе']].map(([k, n]) => `<button data-a="ptab" data-id="${k}" aria-current="${ptab === k}">${n}</button>`).join('')}</div>`;
+  return `<div class="head"><div><div class="date">Вес, питание, отчёты</div><h1>Прогресс</h1></div></div>${sub}${ptab === 'day' ? reportDay() : ptab === 'week' ? reportWeek() : ptab === 'tog' ? viewTogether() : viewOverview()}`;
 }
 function viewMore() {
   return `
@@ -1045,6 +1246,10 @@ function viewMore() {
   <section class="card menu">
     <button class="mrow" data-a="profile"><b>Профиль и цели</b><span>${fmt(S.profile.goal)} ккал · ${(GOALS[S.profile.goalType] || '').toLowerCase()}</span></button>
     <button class="mrow" data-a="switch"><b>Профиль: ${esc(PROFILES[who].name)}</b><span>сменить</span></button>
+    <button class="mrow" data-a="theme"><b>Тема оформления</b><span>${THEMES[theme]}</span></button>
+    <button class="mrow" data-a="remindopen"><b>Напоминания</b><span>вода, еда, тренировка</span></button>
+    <button class="mrow" data-a="healthopen"><b>Шаги из «Здоровья»</b><span>автоматически</span></button>
+    <button class="mrow" data-a="shop"><b>Список покупок</b><span>на неделю</span></button>
     <button class="mrow" data-a="backup"><b>Резервная копия данных</b><span>копировать</span></button>
     <button class="mrow" data-a="resetask"><b style="color:var(--warm)">Сбросить все данные</b><span>начать с нуля</span></button>
   </section>
@@ -1138,6 +1343,9 @@ function viewSheet() {
   if (s.type === 'add') body = viewAdd(s);
   else if (s.type === 'reset') body = `<h2>Сбросить все данные?</h2><p class="mute">Удалятся дневник питания, тренировки, вес и отчёты профиля «${esc(PROFILES[who].name)}» на всех устройствах. Вернуть их будет нельзя.</p><button class="btn" style="background:var(--warm);color:#fff" data-a="resetdo">Да, удалить всё</button><button class="btn soft" data-a="close">Отмена</button>`;
   else if (s.type === 'ex') body = exSheet(s);
+  else if (s.type === 'remind') body = remindSheet(s);
+  else if (s.type === 'health') body = healthSheet();
+  else if (s.type === 'shop') body = shopSheet(s);
   else if (s.type === 'fridge') body = fridgeSheet(s);
   else if (s.type === 'weight') body = `<h2>Записать вес</h2>${inp('kg', 'Вес, кг', 'number')}<button class="btn" data-a="saveweight" ${n0(s.kg) > 20 ? '' : 'disabled'}>Сохранить</button><button class="btn soft" data-a="close">Отмена</button>`;
   else if (s.type === 'steps') body = `<h2>Шаги за день</h2><p class="mute small">Откройте приложение «Здоровье» на iPhone и посмотрите шаги за сегодня.</p>${inp('steps', 'Шагов', 'number')}<button class="btn" data-a="savesteps">Сохранить</button><button class="btn soft" data-a="close">Отмена</button>`;
@@ -1277,7 +1485,7 @@ document.addEventListener('click', (e) => {
     case 'copybk': { const ta = document.getElementById('bk'); if (ta) { ta.select(); ta.setSelectionRange(0, 1e9); }
       if (navigator.clipboard) navigator.clipboard.writeText(s.blob).then(() => say('Скопировано'), () => say('Нажмите «Копировать» в меню выделения')); else say('Нажмите «Копировать» в меню выделения'); break; }
     case 'dorestore': { try { const o = JSON.parse(s.blob); if (!o || !Array.isArray(o.meals)) throw 0; S = normalize(o); S.onboarded = true; save(); sheet = null; say('Данные восстановлены'); } catch { say('Не получилось прочитать текст'); } break; }
-    case 'ptab': ptab = id; repErr = ''; window.scrollTo(0, 0); render(); break;
+    case 'ptab': ptab = id; repErr = ''; window.scrollTo(0, 0); if (id === 'tog') { loadPeer(false); } render(); break;
     case 'rpage': { const d = n0(el.dataset.d), cur = ymd();
       if (ptab === 'week') { const nm = addDays(rweek, d); if (nm <= monOf(cur)) rweek = nm; } else { const nd = addDays(rday, d); if (nd <= cur) rday = nd; }
       repErr = ''; render(); break; }
@@ -1290,6 +1498,25 @@ document.addEventListener('click', (e) => {
     case 'progtoggle': progOpen = !progOpen; render(); break;
     case 'resetask': sheet = { type: 'reset' }; render(); break;
     case 'resetdo': wipeAll(); day = ymd(); tab = 'diary'; sheet = { type: 'profile', p: Object.assign({}, S.profile, { age: '', height: '' }), kg0: '', first: true }; render(); syncNow(); break;
+    case 'theme': { const ks = Object.keys(THEMES); theme = ks[(ks.indexOf(theme) + 1) % ks.length]; lset('hudeem-theme', theme); applyTheme(); render(); break; }
+    case 'normai': runNormCheck(); break;
+    case 'normapply': { S.profile.goal = n0(el.dataset.v); save(); say('Норма обновлена'); break; }
+    case 'peerreload': loadPeer(false); break;
+    case 'cheer': sendCheer(CHEERS[n0(el.dataset.i)]); break;
+    case 'healthopen': sheet = { type: 'health' }; render(); break;
+    case 'copysteps': { const u = stepsUrl(), i = document.getElementById('surl'); if (i) { i.select(); i.setSelectionRange(0, 1e9); } if (navigator.clipboard) navigator.clipboard.writeText(u).then(() => say('Скопировано'), () => say('Нажмите «Копировать» в меню выделения')); else say('Нажмите «Копировать» в меню выделения'); break; }
+    case 'pullsteps': pullSteps().then(() => say('Готово')); break;
+    case 'remindopen': openRemind(); break;
+    case 'rtog': s.set[id] = !s.set[id]; render(); break;
+    case 'rday': { const a = s.set.workoutDays, n = n0(id); s.set.workoutDays = a.includes(n) ? a.filter((x) => x !== n) : [...a, n]; render(); break; }
+    case 'remindon': savePush(true); break;
+    case 'remindoff': offPush(); break;
+    case 'remindtest': testPush(); break;
+    case 'fshoot': $('#file').click(); break;
+    case 'shop': sheet = Object.assign({ type: 'shop', busy: false, err: '', avoid: '' }, {}); render(); break;
+    case 'shopgen': runShop(s); break;
+    case 'shopt': { const it = S.shop && S.shop.items.find((x) => x.id === id); if (it) { it.done = !it.done; save(); render(); } break; }
+    case 'shopclear': S.shop.items = S.shop.items.filter((x) => !x.done); save(); render(); break;
     case 'syncnow': syncNow(); break;
     case 'addex': sheet = newEx(); render(); break;
     case 'exrep': { const e = S.exlog.find((x) => x.id === id); if (e) { sheet = newEx({ exn: e.name, sets: e.sets, reps: e.reps, kg: e.kg || '', min: e.min || '', feel: 'ok' }); render(); } break; }
@@ -1311,7 +1538,7 @@ document.addEventListener('click', (e) => {
 /* ---------- старт ---------- */
 if (!S.onboarded) sheet = { type: 'profile', p: Object.assign({}, S.profile, { age: '', height: '' }), kg0: '', first: true };
 render();
-lastPull = Date.now(); syncNow(); setTimeout(loadExDb, 1500);
+lastPull = Date.now(); syncNow(); setTimeout(loadExDb, 1500); setTimeout(() => loadPeer(true), 4000);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
 </script>

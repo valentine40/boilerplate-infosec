@@ -8,6 +8,9 @@
 - `netlify/functions/ai.js` — функция для бесплатного ИИ (Gemini, запасной Groq). Ключ лежит только в переменных окружения Netlify.
 - Дневник упражнений, разбор тренировок и план питания из холодильника работают через ту же функцию `ai.js`.
 - `netlify/functions/sync.mjs` — облачное хранилище: один код из `ACCESS_CODES` = один аккаунт (у мамы свой код).
+- `steps.mjs` — шаги из «Здоровья» (iPhone Команды шлют число на `/.netlify/functions/steps?code=КОД&steps=N`).
+- `peer.mjs` — вкладка «Вместе»: сводка второго профиля и сообщения «молодец».
+- `push.mjs` и `remind.mjs` — напоминания (Web Push, по расписанию каждые 15 минут). Работают на iPhone только из иконки на экране «Домой» (iOS 16.4+).
 - Штрихкоды ищутся в Open Food Facts прямо из приложения.
 
 ## Переменные окружения Netlify
@@ -18,3 +21,5 @@
 | `GROQ_MODEL` | по желанию, по умолчанию `qwen/qwen3.8-27b` |
 | `GEMINI_API_KEY` | основной ИИ (Google AI Studio или Vertex-ключ AQ.…) |
 | `GEMINI_MODEL` | по желанию, своя модель Gemini |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | ключи для push-напоминаний |
+| `VAPID_SUBJECT` | по желанию, адрес сайта или mailto: |
